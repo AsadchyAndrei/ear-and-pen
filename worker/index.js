@@ -85,7 +85,8 @@ export default {
         : res.status === 401 ? "bad_key"
         : /credit balance/i.test(info.message || "") ? "no_credit"
         : "upstream_error";
-      return json({ error: code, upstream: { status: res.status, type: info.type, message: String(info.message || "").slice(0, 200) } },
+      const k = String(env.ANTHROPIC_API_KEY || "").trim();
+      return json({ error: code, upstream: { status: res.status, type: info.type, message: String(info.message || "").slice(0, 200) }, keyCheck: { prefix: k.slice(0, 12), length: k.length, hasInnerSpace: /\s/.test(k) } },
         res.status === 429 ? 429 : 502, headers);
     }
     const out = await res.json();
