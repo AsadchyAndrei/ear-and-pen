@@ -1,0 +1,11 @@
+name = "ear-and-pen-api"
+main = "worker/index.js"
+compatibility_date = "2026-06-01"
+
+[vars]
+ALLOWED_ORIGINS = "https://asadchyandrei.github.io"
+MODEL = "claude-sonnet-5-5"
+RATE_PER_MINUTE = "12"
+
+# Secret (set in the Cloudflare dashboard, never in this file):
+#   ANTHROPIC_API_KEY
