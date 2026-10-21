@@ -26,7 +26,7 @@
 
 1. Cloudflare → Workers & Pages → Create → Import a repository → этот репозиторий. Настройки сборки по умолчанию: Wrangler сам возьмёт `wrangler.toml`.
 2. В настройках воркера → Variables and Secrets → добавить **Secret** `ANTHROPIC_API_KEY` (ключ с console.anthropic.com).
-3. Адрес воркера (`https://ear-and-pen-api.<аккаунт>.workers.dev`) вписать в `config.js`.
+3. Адрес воркера (`https://ear-and-pen-api.asadchy-andrei.workers.dev`) вписать в `config.js`.
 
 Каждый push в `main` пересобирает и сайт, и сервер.
 
