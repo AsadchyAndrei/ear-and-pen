@@ -305,7 +305,7 @@ const errCopy = e => ({
   not_granted:"Доступ к Claude не разрешён для этой страницы.", sampling_disabled:"Claude недоступен для этого аккаунта.",
   rate_limited:"Слишком много запросов. Подождите минуту и попробуйте снова.", session_expired:"Сессия истекла — войдите в Claude заново.",
   invalid_json:"Ответ пришёл в неожиданном виде. Нажмите ещё раз.", refused:"Claude не стал отвечать на этот запрос. Измените текст.",
-  not_configured:"Сервер Claude ещё не настроен (нет ключа API).", network:"Нет связи с сервером. Проверьте интернет и попробуйте снова.",
+  not_configured:"Сервер Claude ещё не настроен (нет ключа API).", no_credit:"На балансе Anthropic API закончились деньги — пополните его в консоли Anthropic (Billing).", bad_key:"Сервер не принял ключ Anthropic API — проверьте ключ в настройках Cloudflare.", network:"Нет связи с сервером. Проверьте интернет и попробуйте снова.",
 }[e && e.code] || "Не удалось получить ответ. Попробуйте ещё раз.");
 const NO_AI = "Функции Claude ещё не подключены на этом сайте.";
 // ai(task, params, {onText, signal}) → parsed JSON for JSON tasks, text otherwise
