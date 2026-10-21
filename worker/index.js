@@ -79,7 +79,14 @@ export default {
     if (!res.ok) {
       const detail = await res.text();
       console.log("anthropic error", res.status, detail.slice(0, 500));
-      return json({ error: res.status === 429 ? "rate_limited" : "upstream_error" }, res.status === 429 ? 429 : 502, headers);
+      let info = {};
+      try { info = JSON.parse(detail).error || {}; } catch {}
+      const code = res.status === 429 ? "rate_limited"
+        : res.status === 401 ? "bad_key"
+        : /credit balance/i.test(info.message || "") ? "no_credit"
+        : "upstream_error";
+      return json({ error: code, upstream: { status: res.status, type: info.type, message: String(info.message || "").slice(0, 200) } },
+        res.status === 429 ? 429 : 502, headers);
     }
     const out = await res.json();
     const text = (out.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
