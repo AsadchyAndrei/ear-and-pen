@@ -2,8 +2,11 @@ name = "ear-and-pen-api"
 main = "worker/index.js"
 compatibility_date = "2026-06-01"
 
+# The worker also answers at api.earandpen.net (Cloudflare creates the DNS record and certificate).
+routes = [{ pattern = "api.earandpen.net", custom_domain = true }]
+
 [vars]
-ALLOWED_ORIGINS = "https://asadchyandrei.github.io"
+ALLOWED_ORIGINS = "https://earandpen.net,https://www.earandpen.net,https://asadchyandrei.github.io"
 MODEL = "claude-sonnet-5-5"
 RATE_PER_MINUTE = "12"
 TTS_PER_MINUTE = "60"
