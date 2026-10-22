@@ -6,7 +6,7 @@
 - **Перевод RU → EN.** Даётся русское предложение, вы пишете перевод. Claude ставит оценку, показывает исправленный и «носительский» вариант, альтернативы и разбирает каждую ошибку с правилом.
 - **Прогресс.** Статистика и список ваших ошибок хранятся в браузере.
 
-Сайт: https://asadchyandrei.github.io/ear-and-pen/
+Сайт: https://earandpen.net
 
 ## Как устроено
 
@@ -38,3 +38,7 @@
 Каждый push в `main` пересобирает и сайт, и сервер.
 
 Рекомендуется поставить месячный лимит расходов в console.anthropic.com → Settings → Limits.
+
+## Вход и синхронизация (Firebase)
+
+Проект Firebase `ear-and-pen`: вход через Google и по email, Cloud Firestore (`nam5`), правила из `firestore.rules` (каждый видит только свой документ `users/{uid}`). Домен `earandpen.net` добавлен в Authentication → Settings → Authorized domains. Настройки проекта — в `config.js` (`FIREBASE`); это публичные идентификаторы, данные защищают правила.
