@@ -33,7 +33,7 @@
 1. Cloudflare → Workers & Pages → Create → Import a repository → этот репозиторий. Настройки сборки по умолчанию: Wrangler сам возьмёт `wrangler.toml`.
 2. В настройках воркера → Variables and Secrets → добавить **Secret** `ANTHROPIC_API_KEY` (ключ с console.anthropic.com).
 3. Для HD-голосов: в Google Cloud → APIs & Services → Credentials создать API key с ограничением **Cloud Text-to-Speech API** и добавить его в воркер как **Secret** `GOOGLE_TTS_KEY`. Хранилище `AUDIO` (KV) Wrangler создаёт сам при первом деплое.
-4. Адрес воркера (`https://ear-and-pen-api.asadchy-andrei.workers.dev`) вписать в `config.js`.
+4. Адрес сервера (`https://api.earandpen.net`) указан в `config.js`.
 
 Каждый push в `main` пересобирает и сайт, и сервер.
 
