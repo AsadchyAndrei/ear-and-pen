@@ -10,10 +10,15 @@ ALLOWED_ORIGINS = "https://earandpen.net,https://www.earandpen.net,https://asadc
 MODEL = "claude-sonnet-5-5"
 RATE_PER_MINUTE = "12"
 TTS_PER_MINUTE = "60"
+FIREBASE_PROJECT = "ear-and-pen"
+# per person per day
+AI_DAILY_LIMIT = "150"
+TTS_DAILY_LIMIT = "600"
 
 # Secret (set in the Cloudflare dashboard, never in this file):
 #   ANTHROPIC_API_KEY
 #   GOOGLE_TTS_KEY  (Google Cloud API key restricted to Cloud Text-to-Speech)
+#   ALLOWED_EMAILS  (who may use Claude and make new audio: verified emails, comma-separated; kept out of the public repo)
 
 # Voice audio is made once per sentence and kept here (Wrangler creates the namespace on first deploy).
 [[kv_namespaces]]

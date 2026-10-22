@@ -42,3 +42,13 @@
 ## Вход и синхронизация (Firebase)
 
 Проект Firebase `ear-and-pen`: вход через Google и по email, Cloud Firestore (`nam5`), правила из `firestore.rules` (каждый видит только свой документ `users/{uid}`). Домен `earandpen.net` добавлен в Authentication → Settings → Authorized domains. Настройки проекта — в `config.js` (`FIREBASE`); это публичные идентификаторы, данные защищают правила.
+
+## Доступ к платным функциям
+
+Проверка и разбор от Claude, генерация диалогов и предложений и озвучка **новых** фраз работают только после входа и только для аккаунтов из списка. Уже озвученные фразы, встроенные диалоги и сверка с эталоном доступны всем.
+
+- Сервер сам проверяет токен входа Firebase (подпись Google, проект `ear-and-pen`, срок) — `worker/auth.js`.
+- Список разрешённых почт — **Secret** `ALLOWED_EMAILS` в настройках воркера в Cloudflare (через запятую). В репозитории его нет. Почта должна быть подтверждена: аккаунт по паролю с чужой почтой доступа не получит.
+- Дневные лимиты на человека — `AI_DAILY_LIMIT` и `TTS_DAILY_LIMIT` в `wrangler.toml`.
+
+Чтобы дать доступ ещё кому-то: Cloudflare → Workers → `ear-and-pen-api` → Settings → Variables and Secrets → `ALLOWED_EMAILS` → изменить → Deploy.

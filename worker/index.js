@@ -2,6 +2,7 @@
 // It never forwards arbitrary prompts — it only accepts the four known tasks
 // and builds the prompt itself from prompts.js, so the API key can't be used as a general proxy.
 import { PROMPTS, JSON_TASKS } from "../prompts.js";
+import { verifyIdToken, allowedEmail, useQuota } from "./auth.js";
 
 const MAX_BODY = 12_000;
 const hits = new Map(); // ip -> [timestamps], best-effort per isolate
@@ -14,7 +15,7 @@ function cors(origin, env) {
     headers: {
       "Access-Control-Allow-Origin": ok ? origin || "*" : "null",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Vary": "Origin",
     },
   };
@@ -22,6 +23,23 @@ function cors(origin, env) {
 
 const json = (obj, status, headers) =>
   new Response(JSON.stringify(obj), { status, headers: { ...headers, "Content-Type": "application/json; charset=utf-8" } });
+
+// Paid features need a signed-in person whose verified email is on ALLOWED_EMAILS (a secret).
+// Returns {uid} or {error, status}.
+async function who(request, env) {
+  if (!env.ALLOWED_EMAILS) return { error: "access_not_configured", status: 503 };
+  const token = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  if (!token) return { error: "sign_in_required", status: 401 };
+  try {
+    const claims = await verifyIdToken(token, env.FIREBASE_PROJECT || "ear-and-pen");
+    if (!allowedEmail(claims, env.ALLOWED_EMAILS)) return { error: "not_allowed", status: 403 };
+    return { uid: claims.sub };
+  } catch (e) {
+    if (e && e.code) return { error: e.code === "token_expired" ? "token_expired" : e.code, status: 401 };
+    console.log("auth", String(e));
+    return { error: "auth_unavailable", status: 503 };
+  }
+}
 
 function rateLimited(ip, perMinute) {
   const now = Date.now();
@@ -46,7 +64,7 @@ async function sha(s) {
 const audio = (buf, headers, from) => new Response(buf, { status: 200, headers: {
   ...headers, "Content-Type": "audio/mpeg", "Cache-Control": "public, max-age=31536000, immutable", "X-Audio": from } });
 
-async function tts(url, env, ctx, headers, ip) {
+async function tts(request, url, env, ctx, headers, ip) {
   const t = String(url.searchParams.get("t") || "").replace(/\s+/g, " ").trim();
   const v = url.searchParams.get("v") || "Puck";
   const l = url.searchParams.get("l") || "en-US";
@@ -60,6 +78,10 @@ async function tts(url, env, ctx, headers, ip) {
     if (hit) return audio(hit, headers, "kept");
   }
   if (!env.GOOGLE_TTS_KEY) return json({ error: "tts_not_configured" }, 503, headers);
+  // audio already made is free to replay; making new audio costs money, so it needs an allowed person
+  const me = await who(request, env);
+  if (me.error) return json({ error: me.error }, me.status, headers);
+  if (!(await useQuota(env.AUDIO, me.uid, "tts", Number(env.TTS_DAILY_LIMIT || 600)))) return json({ error: "daily_limit" }, 429, headers);
   // new audio costs money: limit per address
   const m = Math.floor(Date.now() / 60000), h = ttsHits.get(ip);
   if (!h || h.m !== m) { if (ttsHits.size > 5000) ttsHits.clear(); ttsHits.set(ip, { m, n: 1 }); }
@@ -101,12 +123,15 @@ export default {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/tts") {
       if (!ok || !origin) return json({ error: "origin_not_allowed" }, 403, headers);
-      return tts(url, env, ctx, headers, request.headers.get("CF-Connecting-IP") || "?");
+      return tts(request, url, env, ctx, headers, request.headers.get("CF-Connecting-IP") || "?");
     }
-    if (request.method === "GET") return json({ ok: true, service: "ear-and-pen", voice: !!env.GOOGLE_TTS_KEY, kept: !!env.AUDIO }, 200, headers);
+    if (request.method === "GET") return json({ ok: true, service: "ear-and-pen", voice: !!env.GOOGLE_TTS_KEY, kept: !!env.AUDIO, access: !!env.ALLOWED_EMAILS }, 200, headers);
     if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405, headers);
     if (!ok) return json({ error: "origin_not_allowed" }, 403, headers);
     if (!env.ANTHROPIC_API_KEY) return json({ error: "not_configured" }, 503, headers);
+
+    const me = await who(request, env);
+    if (me.error) return json({ error: me.error }, me.status, headers);
 
     const ip = request.headers.get("CF-Connecting-IP") || "?";
     if (rateLimited(ip, Number(env.RATE_PER_MINUTE || 12))) return json({ error: "rate_limited" }, 429, headers);
@@ -118,6 +143,7 @@ export default {
     const build = PROMPTS[body?.task];
     if (!build) return json({ error: "unknown_task" }, 400, headers);
 
+    if (!(await useQuota(env.AUDIO, me.uid, "ai", Number(env.AI_DAILY_LIMIT || 150)))) return json({ error: "daily_limit" }, 429, headers);
     const prompt = build(body.params || {});
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

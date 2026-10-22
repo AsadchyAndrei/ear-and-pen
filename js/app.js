@@ -19,8 +19,20 @@ const errCopy = e => ({
   rate_limited:"Слишком много запросов. Подождите минуту и попробуйте снова.", session_expired:"Сессия истекла — войдите в Claude заново.",
   invalid_json:"Ответ пришёл в неожиданном виде. Нажмите ещё раз.", refused:"Claude не стал отвечать на этот запрос. Измените текст.",
   not_configured:"Сервер Claude ещё не настроен (нет ключа API).", no_credit:"На балансе Anthropic API закончились деньги — пополните его в консоли Anthropic (Billing).", bad_key:"Сервер не принял ключ Anthropic API — проверьте ключ в настройках Cloudflare.", network:"Нет связи с сервером. Проверьте интернет и попробуйте снова.",
+  sign_in_required:"Проверка и разбор от Claude доступны после входа. Нажмите «Войти» вверху страницы.",
+  not_allowed:"У этого аккаунта пока нет доступа к Claude. Встроенные диалоги и сверка с эталоном работают и без него.",
+  daily_limit:"Дневной лимит на сегодня исчерпан. Продолжим завтра.",
+  token_expired:"Вход устарел. Выйдите и войдите снова.", bad_token:"Вход не подтвердился. Выйдите и войдите снова.",
+  auth_unavailable:"Не удалось проверить вход. Попробуйте через минуту.", access_not_configured:"Доступ к Claude ещё настраивается.",
 }[e && e.code] || "Не удалось получить ответ. Попробуйте ещё раз.");
 const NO_AI = "Функции Claude ещё не подключены на этом сайте.";
+// The sign-in token goes with every paid request; the server checks it and the list of allowed emails.
+async function authHeaders(force = false){
+  try{
+    if(cloud && user && cloud.token){ const t = await cloud.token(force); if(t) return { Authorization: "Bearer " + t }; }
+  }catch{}
+  return {};
+}
 // ai(task, params, {onText, signal}) → parsed JSON for JSON tasks, text otherwise
 async function ai(task, params, opts = {}){
   const prompt = PROMPTS[task](params);
@@ -31,14 +43,20 @@ async function ai(task, params, opts = {}){
     return r.text;
   }
   if(!API_URL) throw {code:"unavailable"};
-  let res;
-  try{
-    res = await fetch(API_URL, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({task, params}), signal: opts.signal });
-  }catch(err){
-    throw {code: err && err.name === "AbortError" ? "cancelled" : "network"};
+  const call = async force => {
+    try{
+      return await fetch(API_URL, { method:"POST", headers:{"Content-Type":"application/json", ...(await authHeaders(force))}, body: JSON.stringify({task, params}), signal: opts.signal });
+    }catch(err){
+      throw {code: err && err.name === "AbortError" ? "cancelled" : "network"};
+    }
+  };
+  let res = await call(false);
+  let body = await res.json().catch(() => ({}));
+  if(body.error === "token_expired"){ res = await call(true); body = await res.json().catch(() => ({})); }
+  if(!res.ok){
+    if(body.error === "sign_in_required" && cloud) setTimeout(() => $("#acctBtn").click(), 0);
+    throw {code: body.error || "upstream_error"};
   }
-  const body = await res.json().catch(() => ({}));
-  if(!res.ok) throw {code: body.error || "upstream_error"};
   if(JSON_TASKS.includes(task)) return body.data;
   opts.onText?.({text: body.text});
   return body.text;
@@ -127,7 +145,7 @@ async function hdBlob(text, voice, rate){
   const p = (async () => {
     const kept = await idb.get(url);
     if(kept) return kept;
-    const r = await fetch(url);
+    const r = await fetch(url, { headers: await authHeaders() });
     if(!r.ok){ const b = await r.json().catch(() => ({})); throw {code: b.error || "tts_failed", status: r.status}; }
     const blob = await r.blob();
     idb.put(url, blob);
@@ -174,7 +192,7 @@ async function speak(text, who = "A", mul = 1){
       return;
     }catch(e){
       if(tok !== speakToken) return;
-      if(!hdWarned){ hdWarned = true; showToast(e.code === "tts_not_configured" ? "HD-голоса ещё не подключены — пока звучит голос браузера." : "HD-голос сейчас недоступен — звучит голос браузера."); }
+      if(!hdWarned){ hdWarned = true; showToast(e.code === "tts_not_configured" ? "HD-голоса ещё не подключены — пока звучит голос браузера." : e.code === "sign_in_required" ? "Новые фразы HD-голосом — после входа. Пока звучит голос браузера." : e.code === "not_allowed" ? "HD-голос для новых фраз доступен не всем аккаунтам — звучит голос браузера." : "HD-голос сейчас недоступен — звучит голос браузера."); }
     }
   }
   const bPick = pick.startsWith("b:") ? pick : (voices[who === "B" ? 1 : 0] ? "b:" + voices[who === "B" ? 1 : 0].voiceURI : "");

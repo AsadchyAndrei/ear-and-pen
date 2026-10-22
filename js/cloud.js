@@ -52,6 +52,8 @@ export async function startCloud(cfg) {
     signInEmail: (email, pass) => AU.signInWithEmailAndPassword(auth, email, pass),
     resetPassword: email => AU.sendPasswordResetEmail(auth, email),
     signOut: () => AU.signOut(auth),
+    // short-lived sign-in token for the Ear & Pen server (refreshed automatically; force = get a fresh one)
+    token: (force = false) => auth.currentUser ? auth.currentUser.getIdToken(force) : Promise.resolve(null),
     async load() {
       return parse(await FS.getDoc(ref()));
     },
