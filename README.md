@@ -18,7 +18,7 @@
 | `worker/index.js` | Сервер на Cloudflare Workers: принимает только 4 задачи, сам собирает запрос и ходит в Anthropic API |
 | `wrangler.toml` | Настройки сервера: модель, разрешённый сайт, лимит запросов в минуту |
 
-Озвучка — голоса браузера (Web Speech API). Лучше всего звучит в Chrome.
+Озвучка — HD-голоса Google Chirp 3 HD через сервер: каждая фраза синтезируется один раз и хранится в Cloudflare KV и в браузере. Если сервер недоступен, звучат голоса браузера.
 
 Без сервера сайт тоже работает: встроенные диалоги с проверкой и сверка перевода с эталоном.
 
@@ -26,7 +26,8 @@
 
 1. Cloudflare → Workers & Pages → Create → Import a repository → этот репозиторий. Настройки сборки по умолчанию: Wrangler сам возьмёт `wrangler.toml`.
 2. В настройках воркера → Variables and Secrets → добавить **Secret** `ANTHROPIC_API_KEY` (ключ с console.anthropic.com).
-3. Адрес воркера (`https://ear-and-pen-api.asadchy-andrei.workers.dev`) вписать в `config.js`.
+3. Для HD-голосов: в Google Cloud → APIs & Services → Credentials создать API key с ограничением **Cloud Text-to-Speech API** и добавить его в воркер как **Secret** `GOOGLE_TTS_KEY`. Хранилище `AUDIO` (KV) Wrangler создаёт сам при первом деплое.
+4. Адрес воркера (`https://ear-and-pen-api.asadchy-andrei.workers.dev`) вписать в `config.js`.
 
 Каждый push в `main` пересобирает и сайт, и сервер.
 

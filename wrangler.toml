@@ -6,6 +6,12 @@ compatibility_date = "2026-06-01"
 ALLOWED_ORIGINS = "https://asadchyandrei.github.io"
 MODEL = "claude-sonnet-5-5"
 RATE_PER_MINUTE = "12"
+TTS_PER_MINUTE = "60"
 
 # Secret (set in the Cloudflare dashboard, never in this file):
 #   ANTHROPIC_API_KEY
+#   GOOGLE_TTS_KEY  (Google Cloud API key restricted to Cloud Text-to-Speech)
+
+# Voice audio is made once per sentence and kept here (Wrangler creates the namespace on first deploy).
+[[kv_namespaces]]
+binding = "AUDIO"

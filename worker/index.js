@@ -13,7 +13,7 @@ function cors(origin, env) {
     ok,
     headers: {
       "Access-Control-Allow-Origin": ok ? origin || "*" : "null",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
       "Vary": "Origin",
     },
@@ -32,6 +32,57 @@ function rateLimited(ip, perMinute) {
   return list.length > perMinute;
 }
 
+/* ---------- Voice: Google Chirp 3 HD, made once per sentence and kept in KV ----------
+   GET /tts?t=<text>&v=<voice>&l=<en-US|en-GB>&r=<rate> → audio/mpeg */
+const TTS_VOICES = new Set(["Puck", "Charon", "Fenrir", "Orus", "Achird", "Kore", "Aoede", "Leda", "Zephyr", "Sulafat"]);
+const TTS_LOCALES = new Set(["en-US", "en-GB"]);
+const TTS_RATES = new Set(["0.6", "0.7", "0.85", "1"]);
+const ttsHits = new Map();
+
+async function sha(s) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 40);
+}
+const audio = (buf, headers, from) => new Response(buf, { status: 200, headers: {
+  ...headers, "Content-Type": "audio/mpeg", "Cache-Control": "public, max-age=31536000, immutable", "X-Audio": from } });
+
+async function tts(url, env, ctx, headers, ip) {
+  const t = String(url.searchParams.get("t") || "").replace(/\s+/g, " ").trim();
+  const v = url.searchParams.get("v") || "Puck";
+  const l = url.searchParams.get("l") || "en-US";
+  const r = url.searchParams.get("r") || "1";
+  if (!t || t.length > 400 || !/[a-z]/i.test(t) || /[<>{}\\]|https?:/i.test(t)
+      || !TTS_VOICES.has(v) || !TTS_LOCALES.has(l) || !TTS_RATES.has(r)) return json({ error: "bad_request" }, 400, headers);
+  const name = `${l}-Chirp3-HD-${v}`;
+  const key = "tts:" + await sha(`${name}|${r}|${t}`);
+  if (env.AUDIO) {
+    const hit = await env.AUDIO.get(key, "arrayBuffer");
+    if (hit) return audio(hit, headers, "kept");
+  }
+  if (!env.GOOGLE_TTS_KEY) return json({ error: "tts_not_configured" }, 503, headers);
+  // new audio costs money: limit per address
+  const m = Math.floor(Date.now() / 60000), h = ttsHits.get(ip);
+  if (!h || h.m !== m) { if (ttsHits.size > 5000) ttsHits.clear(); ttsHits.set(ip, { m, n: 1 }); }
+  else if (++h.n > Number(env.TTS_PER_MINUTE || 60)) return json({ error: "rate_limited" }, 429, headers);
+
+  const res = await fetch("https://texttospeech.googleapis.com/v1/text:synthesize", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": String(env.GOOGLE_TTS_KEY).trim() },
+    body: JSON.stringify({ input: { text: t }, voice: { languageCode: l, name }, audioConfig: { audioEncoding: "MP3", speakingRate: Number(r) } }),
+  });
+  if (!res.ok) {
+    let info = {};
+    try { info = (await res.json()).error || {}; } catch {}
+    console.log("tts error", res.status, info.status, info.message);
+    return json({ error: "tts_failed", upstream: { status: res.status, reason: info.status, message: String(info.message || "").slice(0, 200) } }, 502, headers);
+  }
+  const b64 = (await res.json()).audioContent || "";
+  const bin = atob(b64), buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  if (env.AUDIO) ctx.waitUntil(env.AUDIO.put(key, buf).catch(e => console.log("kv put", String(e))));
+  return audio(buf, headers, "new");
+}
+
 function parseJSON(text) {
   try { return JSON.parse(text); } catch {}
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -43,11 +94,16 @@ function parseJSON(text) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const origin = request.headers.get("Origin") || "";
     const { ok, headers } = cors(origin, env);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
-    if (request.method === "GET") return json({ ok: true, service: "ear-and-pen" }, 200, headers);
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/tts") {
+      if (!ok || !origin) return json({ error: "origin_not_allowed" }, 403, headers);
+      return tts(url, env, ctx, headers, request.headers.get("CF-Connecting-IP") || "?");
+    }
+    if (request.method === "GET") return json({ ok: true, service: "ear-and-pen", voice: !!env.GOOGLE_TTS_KEY, kept: !!env.AUDIO }, 200, headers);
     if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405, headers);
     if (!ok) return json({ error: "origin_not_allowed" }, 403, headers);
     if (!env.ANTHROPIC_API_KEY) return json({ error: "not_configured" }, 503, headers);

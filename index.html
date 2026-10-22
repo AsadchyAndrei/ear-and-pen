@@ -241,8 +241,10 @@ table.mt td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
       <div class="voices">
         <label class="field"><span class="lbl">Голос A</span><select id="voiceA"></select></label>
         <label class="field"><span class="lbl">Голос B</span><select id="voiceB"></select></label>
+        <label class="field"><span class="lbl">Акцент</span>
+          <select id="accent"><option value="en-US">Американский</option><option value="en-GB">Британский</option></select></label>
       </div>
-      <p class="note" style="margin-top:8px">Озвучка идёт через голоса вашего браузера и устройства. Лучше всего звучат «Google», «Natural» и «Enhanced» голоса.</p>
+      <p class="note" style="margin-top:8px">HD-голоса — Google Chirp 3 HD, звучат как живая речь. Каждая фраза озвучивается один раз и сохраняется, повторы мгновенные. Голоса браузера работают без интернета, но звучат проще.</p>
     </details>
   </section>
 
@@ -357,39 +359,126 @@ function showView(v){
 }
 
 /* ---------- speech ---------- */
+// HD voices (Google Chirp 3 HD via the Worker) with the browser's own voices as a fallback.
+const HD = [
+  ["Puck","мужской, живой"], ["Charon","мужской, спокойный"], ["Fenrir","мужской, энергичный"], ["Orus","мужской, низкий"], ["Achird","мужской, мягкий"],
+  ["Kore","женский, уверенный"], ["Aoede","женский, лёгкий"], ["Leda","женский, молодой"], ["Zephyr","женский, яркий"], ["Sulafat","женский, тёплый"]];
+const HD_RATES = [0.6, 0.7, 0.85, 1];
+const hdOn = !!API_URL;
 const synth = "speechSynthesis" in window ? window.speechSynthesis : null;
 let voices = [];
+state.accent = store.get("accent", "en-US");
+$("#accent").value = state.accent;
+const isPick = v => /^(g|b):/.test(v || "");
+if(!isPick(state.voiceA)) state.voiceA = hdOn ? "g:Puck" : "";
+if(!isPick(state.voiceB)) state.voiceB = hdOn ? "g:Kore" : "";
 function loadVoices(){
-  if(!synth) return;
-  const all = synth.getVoices().filter(v => /^en(-|_|$)/i.test(v.lang));
+  voices = synth ? synth.getVoices().filter(v => /^en(-|_|$)/i.test(v.lang)) : [];
   const score = v => (/natural|neural|enhanced|premium|google/i.test(v.name)?10:0) + (/en-US/i.test(v.lang)?3:0) + (/en-GB/i.test(v.lang)?2:0);
-  voices = all.sort((a,b) => score(b) - score(a));
-  const fill = (sel, cur, fallbackIdx) => {
-    sel.innerHTML = voices.map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name)} · ${esc(v.lang)}</option>`).join("") || `<option value="">Голос по умолчанию</option>`;
-    const pick = voices.find(v => v.voiceURI === cur) || voices[Math.min(fallbackIdx, voices.length-1)];
-    if(pick) sel.value = pick.voiceURI;
+  voices.sort((a,b) => score(b) - score(a));
+  const hdOpts = hdOn ? `<optgroup label="HD-голоса (Google)">${HD.map(([n,d]) => `<option value="g:${n}">${n} — ${d}</option>`).join("")}</optgroup>` : "";
+  const brOpts = voices.length ? `<optgroup label="Голоса браузера">${voices.map(v => `<option value="b:${esc(v.voiceURI)}">${esc(v.name)} · ${esc(v.lang)}</option>`).join("")}</optgroup>` : "";
+  const fill = (sel, cur, idx) => {
+    sel.innerHTML = hdOpts + brOpts || `<option value="">Голос по умолчанию</option>`;
+    const opts = [...sel.options].map(o => o.value);
+    sel.value = opts.includes(cur) ? cur : (opts.filter(v => v.startsWith("b:"))[idx] || opts[0] || "");
   };
   fill($("#voiceA"), state.voiceA, 0);
   fill($("#voiceB"), state.voiceB, 1);
 }
-if(synth){ loadVoices(); synth.addEventListener?.("voiceschanged", loadVoices); }
-$("#voiceA").onchange = e => { state.voiceA = e.target.value; store.set("voiceA", state.voiceA); speak("This is voice A.", "A"); };
-$("#voiceB").onchange = e => { state.voiceB = e.target.value; store.set("voiceB", state.voiceB); speak("And this is voice B.", "B"); };
-const voiceFor = who => voices.find(v => v.voiceURI === $(who === "B" ? "#voiceB" : "#voiceA").value);
-let speakToken = 0;
-function speak(text, who = "A", mul = 1){
+loadVoices();
+synth?.addEventListener?.("voiceschanged", loadVoices);
+$("#voiceA").onchange = e => { state.voiceA = e.target.value; store.set("voiceA", state.voiceA); stopSpeech(); speak("Hi! This is how I sound.", "A"); };
+$("#voiceB").onchange = e => { state.voiceB = e.target.value; store.set("voiceB", state.voiceB); stopSpeech(); speak("And this is my voice.", "B"); };
+$("#accent").onchange = e => { state.accent = e.target.value; store.set("accent", state.accent); stopSpeech(); speak("Let's practise some listening.", "A"); };
+const pickFor = who => $(who === "B" ? "#voiceB" : "#voiceA").value || "";
+
+// audio kept on this device (IndexedDB), so a line is fetched once per device
+const idb = (() => {
+  let dbp;
+  const open = () => dbp ||= new Promise((res, rej) => { const r = indexedDB.open("ep-audio", 1); r.onupgradeneeded = () => r.result.createObjectStore("a"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+  return {
+    async get(k){ try{ const db = await open(); return await new Promise(res => { const q = db.transaction("a").objectStore("a").get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); }); }catch{ return null; } },
+    async put(k, v){ try{ const db = await open(); db.transaction("a", "readwrite").objectStore("a").put(v, k); }catch{} }
+  };
+})();
+const hdMem = new Map();
+const nearestRate = x => HD_RATES.reduce((a, b) => Math.abs(b - x) < Math.abs(a - x) ? b : a);
+function hdUrl(text, voice, rate){
+  const q = new URLSearchParams({ t: text.replace(/\s+/g, " ").trim(), v: voice, l: state.accent, r: String(rate) });
+  return API_URL.replace(/\/$/, "") + "/tts?" + q;
+}
+async function hdBlob(text, voice, rate){
+  const url = hdUrl(text, voice, rate);
+  if(hdMem.has(url)) return hdMem.get(url);
+  const p = (async () => {
+    const kept = await idb.get(url);
+    if(kept) return kept;
+    const r = await fetch(url);
+    if(!r.ok){ const b = await r.json().catch(() => ({})); throw {code: b.error || "tts_failed", status: r.status}; }
+    const blob = await r.blob();
+    idb.put(url, blob);
+    return blob;
+  })();
+  hdMem.set(url, p);
+  p.catch(() => hdMem.delete(url));
+  return p;
+}
+let hdWarned = false;
+const player = new Audio();
+player.preload = "auto";
+let playing = null; // {resolve}
+function playBlob(blob){
+  return new Promise(res => {
+    const src = URL.createObjectURL(blob);
+    const done = () => { player.onended = player.onerror = null; URL.revokeObjectURL(src); if(playing && playing.res === res) playing = null; res(); };
+    playing = { res: done };
+    player.onended = player.onerror = done;
+    player.src = src;
+    player.play().catch(done);
+  });
+}
+function speakBrowser(text, pick, rate){
   return new Promise(res => {
     if(!synth){ res(); return; }
     const u = new SpeechSynthesisUtterance(text);
-    const v = voiceFor(who);
+    const v = voices.find(x => "b:" + x.voiceURI === pick) || voices[0];
     if(v){ u.voice = v; u.lang = v.lang; } else u.lang = "en-US";
-    if(who === "B" && voiceFor("A") === v) u.pitch = 0.82;
-    u.rate = state.rate * mul;
+    u.rate = rate;
     u.onend = u.onerror = () => res();
     synth.speak(u);
   });
 }
-function stopSpeech(){ speakToken++; if(synth) synth.cancel(); document.querySelectorAll(".line.playing").forEach(l => l.classList.remove("playing")); }
+let speakToken = 0;
+async function speak(text, who = "A", mul = 1){
+  const pick = pickFor(who), tok = speakToken;
+  if(pick.startsWith("g:") && hdOn){
+    const rate = mul < 1 ? (HD_RATES[HD_RATES.indexOf(nearestRate(state.rate)) - 1] || HD_RATES[0]) : nearestRate(state.rate);
+    try{
+      const blob = await hdBlob(text, pick.slice(2), rate);
+      if(tok !== speakToken) return;
+      await playBlob(blob);
+      return;
+    }catch(e){
+      if(tok !== speakToken) return;
+      if(!hdWarned){ hdWarned = true; showToast(e.code === "tts_not_configured" ? "HD-голоса ещё не подключены — пока звучит голос браузера." : "HD-голос сейчас недоступен — звучит голос браузера."); }
+    }
+  }
+  const bPick = pick.startsWith("b:") ? pick : (voices[who === "B" ? 1 : 0] ? "b:" + voices[who === "B" ? 1 : 0].voiceURI : "");
+  return speakBrowser(text, bPick, state.rate * mul);
+}
+// fetch the next lines ahead so playback has no gaps
+function prefetch(lines){
+  if(!hdOn) return;
+  lines.forEach(l => { const pick = pickFor(l.s); if(pick.startsWith("g:")) hdBlob(l.text, pick.slice(2), nearestRate(state.rate)).catch(() => {}); });
+}
+function stopSpeech(){
+  speakToken++;
+  if(synth) synth.cancel();
+  try{ player.pause(); }catch{}
+  playing?.res();
+  document.querySelectorAll(".line.playing").forEach(l => l.classList.remove("playing"));
+}
 function setRate(r){ state.rate = r; store.set("rate", r); document.querySelectorAll("#rateSeg button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.r) === r)); }
 document.querySelectorAll("#rateSeg button").forEach(b => b.onclick = () => setRate(Number(b.dataset.r)));
 setRate(state.rate);
@@ -494,6 +583,7 @@ function renderDialog(){
 async function playLine(i, mul = 1){
   const d = dialogs[dIdx]; stopSpeech(); const tok = speakToken;
   const row = $(`.line[data-i="${i}"]`); row?.classList.add("playing");
+  prefetch(d.lines.slice(i + 1, i + 3));
   await speak(d.lines[i].text, d.lines[i].s, mul);
   if(tok === speakToken) row?.classList.remove("playing");
 }
@@ -518,6 +608,7 @@ $("#lines").addEventListener("focusin", e => {
 });
 $("#dPlayAll").onclick = async () => {
   const d = dialogs[dIdx]; stopSpeech(); const tok = speakToken;
+  prefetch(d.lines);
   for(let i=0;i<d.lines.length;i++){
     if(tok !== speakToken) return;
     const row = $(`.line[data-i="${i}"]`); row?.classList.add("playing");
