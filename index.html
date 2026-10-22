@@ -427,7 +427,7 @@ function diff(expected, typed, strict){
 }
 function diffHTML(ops){
   return ops.map(o => o.t === "eq" ? `<span class="w-ok">${esc(o.w)}</span>`
-    : o.t === "sub" ? `<del class="w">${esc(o.w)}</del><ins class="w">${esc(o.e)}</ins>`
+    : o.t === "sub" ? `<del class="w">${esc(o.w)}</del> <ins class="w">${esc(o.e)}</ins>`
     : o.t === "miss" ? `<ins class="w miss" title="пропущено">${esc(o.e)}</ins>`
     : `<del class="w" title="лишнее">${esc(o.w)}</del>`).join(" ");
 }
@@ -694,7 +694,7 @@ function renderTrResult(it, mine, r){
         <div><b>${score>=90?"Отлично":score>=75?"Хорошо":score>=55?"Есть ошибки":"Нужно поработать"}</b>${r.meaning_ok === false ? ` · <span class="err-msg">смысл передан неточно</span>` : ""}<p>${esc(r.verdict_ru)}</p></div>
       </div>
       <div class="versions">
-        ${cd && cd.ops.some(o => o.t !== "eq") ? `<div class="ver"><span class="eyebrow">Ваш вариант с исправлениями</span><div class="en" style="font-family:var(--f-mono);font-size:15px;line-height:1.9">${diffHTML(cd.ops)}</div></div>` : `<div class="ver"><span class="eyebrow">Ваш вариант</span><div class="en">${esc(mine)}</div></div>`}
+        ${cd && r.meaning_ok !== false && cd.pct >= 40 && cd.ops.some(o => o.t !== "eq") ? `<div class="ver"><span class="eyebrow">Ваш вариант с исправлениями</span><div class="en" style="font-family:var(--f-mono);font-size:15px;line-height:1.9">${diffHTML(cd.ops)}</div></div>` : `<div class="ver"><span class="eyebrow">Ваш вариант</span><div class="en">${esc(mine)}</div></div>`}
         ${r.natural ? `<div class="ver natural"><span class="eyebrow">Как сказал бы носитель</span><div class="row"><span class="en" style="flex:1;min-width:0">${esc(r.natural)}</span>${playBtn(r.natural)}</div></div>` : ""}
       </div>
       ${ms.length ? `<div><h3 style="margin-bottom:10px">Разбор ошибок</h3><ul class="mlist">${ms.map(m => `
