@@ -584,11 +584,11 @@ function updateBar(){
 const lineInput = i => $(`.line[data-i="${i}"] input`);
 // keep the keyboard open: tapping the bar must not take focus from the line being typed
 $("#mbar").addEventListener("mousedown", e => e.preventDefault());
-$("#mbReplay").onclick = () => { lineInput(cur)?.focus(); playLine(cur); };
-$("#mbSlow").onclick = () => { lineInput(cur)?.focus(); playLine(cur, 0.75); };
+$("#mbReplay").onclick = () => { const i = cur; lineInput(i)?.focus(); playLine(i); };
+$("#mbSlow").onclick = () => { const i = cur; lineInput(i)?.focus(); playLine(i, 0.75); };
 $("#mbNext").onclick = () => {
-  const n = dialogs[dIdx].lines.length;
-  if(cur < n - 1){ lineInput(cur + 1)?.focus(); playLine(cur + 1); }
+  const n = dialogs[dIdx].lines.length, next = cur + 1;
+  if(next < n){ lineInput(next)?.focus(); playLine(next); }
   else { document.activeElement?.blur?.(); checkDictation(); }
 };
 if(window.visualViewport){
