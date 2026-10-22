@@ -1,0 +1,17 @@
+rules_version = '2';
+// Ear & Pen: every account can read and write ONLY its own document.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['data', 'ts', 'v'])
+        && request.resource.data.data is string && request.resource.data.data.size() < 900000
+        && request.resource.data.ts is int
+        && request.resource.data.v is int;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
