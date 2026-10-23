@@ -512,3 +512,42 @@ dialog.sheet::backdrop{background:rgba(10,20,28,.42);-webkit-backdrop-filter:blu
 .stk{display:inline-grid;justify-items:center;align-items:center}
 .stk > *{grid-area:1/1;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}
 .stk > [aria-hidden=true]{visibility:hidden}
+/* ---------- goal strip ---------- */
+.goalbar{display:flex;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:8px 8px 8px 12px}
+.gb-goal{flex:1;min-width:0;display:flex;align-items:center;gap:10px;background:none;border:0;padding:4px 0;text-align:left;cursor:pointer;color:inherit}
+.gb-goal > svg{width:26px;height:26px;color:var(--accent);flex:none}
+.gb-txt{display:flex;flex-direction:column;min-width:0}
+.gb-txt b{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gb-txt .note{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gb-pct{flex:none;font-family:var(--f-display);font-weight:800;font-size:20px;color:var(--accent);margin-left:auto;padding-right:4px}
+.goalbar #sessStart{flex:none;white-space:nowrap}
+.goaldetail{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:var(--r);background:var(--sunk);font-size:14px}
+.goaldetail .meter{height:8px;border-radius:4px;background:var(--line);overflow:hidden}
+.goaldetail .meter i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.goaldetail .row{justify-content:space-between}
+/* ---------- session bar ---------- */
+.sessbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:16;width:min(640px,calc(100% - 24px));
+  background:var(--fg);color:var(--bg);border-radius:14px;padding:10px 10px 10px 14px;display:flex;gap:10px;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+body.has-mbar .sessbar{bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+body.has-sess{padding-bottom:110px}
+.sb-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.sb-step{font-size:12px;opacity:.75}
+.sb-lbl{font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-dots{display:flex;gap:5px}
+.sb-dots i{width:18px;height:4px;border-radius:2px;background:currentColor;opacity:.25}
+.sb-dots i.done{opacity:1;background:var(--ok)}
+.sb-dots i.now{opacity:.9}
+.sb-acts{display:flex;gap:6px;flex:none}
+.sessbar .btn{min-height:38px;padding:6px 12px}
+.sessbar .btn.ghost{color:var(--bg);opacity:.8}
+.sessbar .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.sessbar.ready .btn.primary{background:var(--ok);border-color:var(--ok);color:#fff}
+@media (max-width:560px){.goalbar{flex-wrap:wrap}.goalbar #sessStart{flex:1}.sessbar #sbSkip{display:none}}
+/* ---------- weekly voice ---------- */
+.voicecard{display:flex;flex-direction:column;gap:10px;background:var(--sunk);border-radius:var(--r);padding:14px 16px;margin:6px 0 18px}
+.vc-phrase{display:flex;gap:10px;align-items:center;font-size:17px;font-weight:500}
+.vc-phrase span{flex:1;min-width:0}
+.vclist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.vclist li{display:flex;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line);font-size:14px}
+.vclist li .d{flex:1}
+.vclist li .p{color:var(--muted);font-family:var(--f-mono);font-size:13px}

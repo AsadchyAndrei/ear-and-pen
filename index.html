@@ -66,6 +66,11 @@
     <button role="tab" id="tab-stats" aria-controls="view-stats" aria-selected="false" tabindex="-1" data-view="stats" type="button">Прогресс</button>
   </nav>
 
+  <div class="goalbar" id="goalBar">
+    <button class="gb-goal" id="gbGoal" type="button" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg><span class="gb-txt"><b id="gbTitle">Поставьте цель с датой</b><span class="note" id="gbSub">Приложение составит план и покажет готовность</span></span><span class="gb-pct" id="gbPct" hidden></span></button>
+    <button class="btn primary" id="sessStart" type="button">Начать занятие</button>
+  </div>
+
   <!-- DICTATION -->
   <section class="desk" id="view-dict" role="tabpanel" aria-labelledby="tab-dict">
     <div class="intro" id="intro" hidden><button class="btn ghost" id="introClose" type="button">Понятно</button></div>
@@ -186,6 +191,14 @@
   <section class="desk" id="view-stats" role="tabpanel" aria-labelledby="tab-stats" hidden>
     <div class="kpis" id="stats"></div>
     <div id="trend"></div>
+    <div class="voicecard" id="voiceCard">
+      <div class="row spread"><h3>Как я звучу</h3><span class="note" id="vcWhen"></span></div>
+      <p class="note" style="margin:0">Раз в неделю скажите одну и ту же фразу — и слушайте, как меняется произношение. Записи хранятся только на этом устройстве.</p>
+      <div class="vc-phrase"><span lang="en" id="vcText"></span><button class="btn icon say" id="vcRef" type="button" title="Послушать диктора" aria-label="Послушать диктора"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg></button></div>
+      <div class="row"><button class="btn primary vc-rec" id="vcRec" type="button"></button><button class="btn" id="vcCompare" type="button" hidden>Первая ↔ последняя</button></div>
+      <div class="heard" id="vcOut" aria-live="polite"></div>
+      <ul class="vclist" id="vcList"></ul>
+    </div>
     <div>
       <div class="row spread" style="margin-bottom:10px">
         <h3>Мои ошибки</h3>
@@ -256,6 +269,23 @@
       <input type="text" id="ownName" lang="en" autocomplete="off" placeholder="Например: Letter from the union"></label>
     <p class="note" id="ownInfo" aria-live="polite"></p>
     <div class="row"><button class="btn primary" id="ownMake" type="button" disabled>Сделать диктант</button><button class="btn" id="ownCancel" type="button">Отмена</button></div>
+  </div>
+</dialog>
+
+<div class="sessbar" id="sessBar" role="status" hidden>
+  <div class="sb-main"><span class="sb-step" id="sbStep"></span><span class="sb-lbl" id="sbLbl"></span><span class="sb-dots" id="sbDots" aria-hidden="true"></span></div>
+  <div class="sb-acts"><button class="btn ghost" id="sbSkip" type="button">Пропустить</button><button class="btn primary" id="sbNext" type="button">Дальше</button><button class="btn ghost sq" id="sbClose" type="button" aria-label="Закончить занятие">✕</button></div>
+</div>
+
+<dialog class="sheet" id="goalSheet" aria-labelledby="goalTitle">
+  <div class="sheet-in">
+    <div class="row spread"><h2 id="goalTitle">Моя цель</h2><button class="btn ghost" id="goalClose" type="button" aria-label="Закрыть">✕</button></div>
+    <p class="note">К чему вы готовитесь? Приложение покажет, сколько осталось дней, насколько вы готовы и что делать сегодня.</p>
+    <label class="field"><span class="lbl">Цель</span><select id="goalKind"></select></label>
+    <label class="field"><span class="lbl">Как назвать</span><input type="text" id="goalName" placeholder="Например: интервью на гражданство"></label>
+    <label class="field"><span class="lbl">Дата</span><input type="date" id="goalDate"></label>
+    <div class="goaldetail" id="goalDetail" hidden></div>
+    <div class="row"><button class="btn primary" id="goalSave" type="button">Сохранить</button><button class="btn ghost" id="goalRemove" type="button" hidden>Убрать цель</button></div>
   </div>
 </dialog>
 

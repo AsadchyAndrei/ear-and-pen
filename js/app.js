@@ -171,7 +171,7 @@ function showView(v){
   state.view = v;
   document.querySelectorAll("nav.tabs button").forEach(b => { const on = b.dataset.view === v; b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; });
   TABS.forEach(x => $("#view-"+x).hidden = x !== v);
-  if(v === "stats") renderStats();
+  if(v === "stats"){ renderStats(); renderVoice(); }
   if(v === "rev"){ if(rpos >= rq.length) startRev(); else renderRev(); }
   if(v === "tr" && !isPhone()) setTimeout(() => $("#trIn").focus(), 0);
   stopSpeech();
@@ -833,6 +833,200 @@ $("#tourSkip").onclick = endTour;
 $("#tourSheet").addEventListener("cancel", () => store.set("introSeen", true));
 $("#tourAgain").onclick = () => { $("#setSheet").close(); openTour(); };
 
+
+/* ---------- my goal: a real event with a date, readiness and today's plan ---------- */
+const bestKind = (id, kind) => { let b = null; if(!id) return b; for(const h of store.get("history", [])) if(h.k === kind && h.d === id) b = Math.max(b ?? 0, h.p); return b; };
+const GOAL_NAMES = {citizen: "Интервью на гражданство", career: "Собеседование на работу", local104: "Работа в Local 104", hvac: "Работа в HVAC", clinic: "Работа в клинике", electro: "Работа электрологом", court: "Иммиграционный суд", doctor: "Приём у врача", school: "Встреча в школе", travel: "Поездка", shop: "Магазины и сервисы", daily: "Английский для жизни"};
+const target = () => { const t = store.get("target", null); return t && t.topic && t.date ? t : null; };
+const daysLeft = t => Math.ceil((new Date(t.date + "T00:00:00") - new Date(dk() + "T00:00:00")) / DAY);
+function readiness(t){
+  const list = BUILTIN.filter(d => d.topic === t.topic);
+  if(!list.length) return null;
+  const n = list.length, voice = !!(SR || serverSTT());
+  const written = list.filter(d => (bestKind(d.id, "dict") ?? 0) >= 80).length;
+  const spoken = list.filter(d => (bestKind(d.id, "speak") ?? 0) >= 80).length;
+  const keys = new Set(list.flatMap(d => (d.vocab || []).map(v => "w:" + wordKey(v.en))));
+  const rev = revState();
+  const learned = [...keys].filter(k => (rev[k]?.step || 0) >= 2).length;
+  const pct = Math.round(100 * (voice ? 0.4 * written / n + 0.35 * spoken / n + 0.25 * learned / Math.max(1, keys.size) : 0.6 * written / n + 0.4 * learned / Math.max(1, keys.size)));
+  const left = (n - written) + (voice ? n - spoken : 0);
+  return {pct, n, written, spoken, voice, phrases: keys.size, learned, left};
+}
+function paintGoal(){
+  const t = target(), bar = $("#goalBar");
+  if(!t){
+    $("#gbTitle").textContent = "Поставьте цель с датой";
+    $("#gbSub").textContent = "Интервью, собеседование, работа — приложение составит план";
+    $("#gbPct").hidden = true; return;
+  }
+  const r = readiness(t), d = daysLeft(t);
+  $("#gbTitle").textContent = t.title;
+  $("#gbPct").hidden = !r; if(r) $("#gbPct").textContent = r.pct + "%";
+  if(d < 0) $("#gbSub").textContent = "Дата прошла — как всё прошло? Поставьте следующую цель";
+  else {
+    const per = r && r.left ? Math.ceil(r.left / Math.max(1, d)) : 0;
+    $("#gbSub").textContent = `${d === 0 ? "сегодня" : d === 1 ? "завтра" : `через ${daysWord(d)}`}${r ? ` · ${per ? `по плану: ${per} ${plural(per, "диалог", "диалога", "диалогов")} в день` : "всё пройдено — повторяйте"}` : ""}`;
+  }
+}
+function goalDetail(){
+  const kind = $("#goalKind").value, t = {topic: kind, title: $("#goalName").value, date: $("#goalDate").value};
+  const r = readiness(t), el = $("#goalDetail");
+  el.hidden = !r || !t.date;
+  if(el.hidden) return;
+  const d = daysLeft(t);
+  el.innerHTML = `<div class="row"><b>Готовность</b><b>${r.pct}%</b></div><div class="meter"><i style="width:${r.pct}%"></i></div>
+    <div>Диалоги письменно: ${r.written} из ${r.n}${r.voice ? ` · голосом: ${r.spoken} из ${r.n}` : ""}</div>
+    <div>Выражения выучены: ${r.learned} из ${r.phrases}</div>
+    ${d >= 0 && r.left ? `<div class="note">Осталось ${r.left} ${plural(r.left, "задание", "задания", "заданий")} — примерно ${Math.ceil(r.left / Math.max(1, d))} в день. Каждый день — «Начать занятие».</div>` : ""}`;
+}
+function openGoal(){
+  const t = target();
+  $("#goalKind").innerHTML = TOPICS.map(x => `<option value="${x.id}">${esc(GOAL_NAMES[x.id] || x.name)}</option>`).join("");
+  $("#goalKind").value = t?.topic || (TOPICS.some(x => x.id === state.topic) ? state.topic : "citizen");
+  $("#goalName").value = t?.title || GOAL_NAMES[$("#goalKind").value] || "";
+  const soon = new Date(Date.now() + 30 * DAY);
+  $("#goalDate").value = t?.date || dk(soon.getTime());
+  $("#goalDate").min = dk();
+  $("#goalRemove").hidden = !t;
+  goalDetail();
+  $("#goalSheet").showModal();
+}
+$("#gbGoal").onclick = openGoal;
+$("#goalClose").onclick = () => $("#goalSheet").close();
+$("#goalKind").onchange = e => { const prev = Object.values(GOAL_NAMES); if(!$("#goalName").value || prev.includes($("#goalName").value)) $("#goalName").value = GOAL_NAMES[e.target.value] || ""; goalDetail(); };
+$("#goalDate").onchange = goalDetail;
+$("#goalSave").onclick = () => {
+  const topic = $("#goalKind").value, date = $("#goalDate").value;
+  if(!date){ $("#goalDate").focus(); return; }
+  setPref("target", {topic, title: $("#goalName").value.trim() || GOAL_NAMES[topic] || topicById(topic)?.name || "Моя цель", date, at: Date.now()});
+  // practise that topic from now on
+  if(state.topic !== topic){ setPref("topic", topic); $("#topic").value = topic; $("#customWrap").hidden = true; paintSet(); jumpTo(); newBankQueue(); }
+  $("#goalSheet").close(); paintGoal();
+  showToast("Цель сохранена. Каждый день — «Начать занятие».");
+};
+$("#goalRemove").onclick = () => { setPref("target", null); $("#goalSheet").close(); paintGoal(); };
+
+/* ---------- start a session: one button, a short practice put together for you ---------- */
+let sess = null;
+function pickDialog(topic){
+  const lv = LV.indexOf(state.level), near = d => Math.abs(LV.indexOf(lvlOf(d)) - lv);
+  const list = BUILTIN.filter(d => d.topic === topic);
+  if(!list.length) return dialogs[dIdx];
+  const unwritten = list.filter(d => (bestKind(d.id, "dict") ?? 0) < 80).sort((a, b) => near(a) - near(b));
+  if(unwritten.length) return unwritten[0];
+  const unspoken = list.filter(d => (bestKind(d.id, "speak") ?? 0) < 80).sort((a, b) => near(a) - near(b));
+  if(unspoken.length) return unspoken[0];
+  return [...list].sort((a, b) => (bestKind(a.id, "speak") ?? 0) - (bestKind(b.id, "speak") ?? 0))[0];
+}
+function startSession(){
+  const topic = target()?.topic || state.topic;
+  const d = pickDialog(topic);
+  const steps = [];
+  const due = dueItems().length;
+  if(due) steps.push({k: "rev", label: `Повтор: ${due} ${plural(due, "карточка", "карточки", "карточек")}`});
+  const voice = !!(SR || serverSTT());
+  if((bestKind(d.id, "dict") ?? 0) < 80 || !voice) steps.push({k: "dict", d: d.id, label: `Диалог на слух: «${d.title}»`});
+  if(voice) steps.push({k: "speak", d: d.id, label: `Тот же диалог — вслух`});
+  steps.push({k: "tr", n: 3, label: "Перевод: 3 предложения"});
+  if(CAN_REC && !voiceLog().some(v => v.w === weekKey())) steps.push({k: "voice", label: "Запись голоса этой недели"});
+  sess = {steps, i: 0, tr: 0};
+  goStep();
+}
+function goStep(){
+  const st = sess.steps[sess.i]; if(!st) return finishSession();
+  if(st.k === "rev"){ rq = []; rpos = 0; showView("rev"); }
+  if(st.k === "dict" || st.k === "speak"){
+    const at = dialogs.findIndex(x => x.id === st.d);
+    if(at >= 0 && at !== dIdx){ dIdx = at; }
+    if(state.dmode !== (st.k === "speak" ? "speak" : "write")) setMode(st.k === "speak" ? "speak" : "write"); else renderDialog();
+    showView("dict"); scrollTo({top: 0, behavior: "smooth"});
+  }
+  if(st.k === "tr"){ sess.tr = 0; showView("tr"); }
+  if(st.k === "voice"){ showView("stats"); setTimeout(() => $("#voiceCard").scrollIntoView({block: "center", behavior: "smooth"}), 150); }
+  paintSess();
+}
+function paintSess(){
+  const bar = $("#sessBar");
+  bar.hidden = !sess; document.body.classList.toggle("has-sess", !!sess);
+  if(!sess) return;
+  const st = sess.steps[sess.i];
+  $("#sbStep").textContent = `Занятие · шаг ${sess.i + 1} из ${sess.steps.length}`;
+  $("#sbLbl").textContent = st.done ? "Готово! " + st.label : st.label;
+  $("#sbDots").innerHTML = sess.steps.map((x, k) => `<i class="${x.done ? "done" : k === sess.i ? "now" : ""}"></i>`).join("");
+  bar.classList.toggle("ready", !!st.done);
+  setLabel($("#sbNext"), sess.i === sess.steps.length - 1 ? "Завершить" : "Дальше →", ["Дальше →", "Завершить"]);
+}
+function sessHit(kind, d){
+  if(!sess) return;
+  const st = sess.steps[sess.i]; if(!st || st.done) return;
+  const ok = (kind === st.k && (st.k === "dict" || st.k === "speak") && d === st.d) || (st.k === "rev" && kind === "revdone") || (st.k === "voice" && kind === "voice")
+    || (st.k === "tr" && kind === "tr" && ++sess.tr >= st.n);
+  if(ok){ st.done = true; paintSess(); announce("Шаг выполнен"); }
+}
+function finishSession(){
+  const done = sess ? sess.steps.filter(x => x.done).length : 0, all = sess ? sess.steps.length : 0;
+  sess = null; paintSess();
+  if(all) showToast(done === all ? "Занятие завершено — отличная работа!" : `Занятие завершено: выполнено ${done} из ${all}.`);
+  paintGoal(); checkGoal();
+}
+$("#sessStart").onclick = startSession;
+$("#sbNext").onclick = () => { sess.i++; goStep(); };
+$("#sbSkip").onclick = () => { sess.i++; goStep(); };
+$("#sbClose").onclick = finishSession;
+
+/* ---------- how I sound: the same phrase once a week, kept on this device ---------- */
+const VOICE_TEXT = "The weather in the north is usually colder, but this Thursday it was warmer than we thought.";
+function weekKey(ts = Date.now()){ const d = new Date(ts); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return dk(d.getTime()); }
+const voiceLog = () => store.get("voiceLog", []);
+const VC_LBL = ["● Записать эту неделю", "● Перезаписать эту неделю", "■ Стоп"];
+function renderVoice(){
+  const log = voiceLog(), w = weekKey(), has = log.some(v => v.w === w);
+  $("#vcText").textContent = VOICE_TEXT; $("#vcRef").dataset.say = VOICE_TEXT;
+  $("#vcWhen").textContent = has ? "эта неделя записана ✓" : log.length ? "пора записать эту неделю" : "";
+  $("#vcRec").disabled = !CAN_REC;
+  if(!$("#vcRec").classList.contains("rec-on") && !$("#vcRec").classList.contains("on")) setLabel($("#vcRec"), has ? "● Перезаписать эту неделю" : "● Записать эту неделю", VC_LBL);
+  $("#vcCompare").hidden = log.length < 2;
+  $("#vcList").innerHTML = [...log].reverse().map(v => `<li><span class="d">Неделя с ${new Date(v.w + "T12:00:00").toLocaleDateString("ru-RU", {day: "numeric", month: "long"})}</span>${v.pct != null ? `<span class="p">${v.pct}%</span>` : ""}<button class="btn icon" type="button" data-vplay="${v.w}" aria-label="Послушать запись"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg></button></li>`).join("");
+}
+$("#vcRec").onclick = async () => {
+  if(listening){ stopListening(true); return; }
+  if(soloRec){ soloRec.stop(); return; }
+  const btn = $("#vcRec"), out = $("#vcOut");
+  let blob = null, pct = null;
+  if(serverSTT()){
+    setLabel(btn, "■ Стоп", VC_LBL);
+    const r = await hearServer(VOICE_TEXT, btn, out);
+    blob = r?.blob || null; if(r && !r.failed) pct = r.pct;
+    if(r && !r.failed) out.innerHTML = `<span class="sc ${scClass(r.pct)}">${r.pct}%</span> ${diffHTML(r.ops)}`;
+  } else if(CAN_REC){
+    setLabel(btn, "■ Стоп", VC_LBL);
+    blob = await recordOnly(-1, btn, out);
+  }
+  if(blob && !silent(blob)){
+    const w = weekKey();
+    await idb.put("voice:" + w, blob);
+    const log = voiceLog().filter(v => v.w !== w); log.push({w, t: Date.now(), pct}); log.sort((a, b) => a.w < b.w ? -1 : 1);
+    store.set("voiceLog", log.slice(-52));
+    if(pct == null) out.textContent = "Сохранено. Послушайте себя рядом с диктором.";
+    sessHit("voice");
+  }
+  btn.classList.remove("rec-on", "on");
+  renderVoice();
+};
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-vplay]"); if(!b) return;
+  const blob = await idb.get("voice:" + b.dataset.vplay); if(blob) playBlob(blob);
+});
+$("#vcCompare").onclick = async () => {
+  const log = voiceLog(); if(log.length < 2) return;
+  const a = await idb.get("voice:" + log[0].w), z = await idb.get("voice:" + log[log.length - 1].w);
+  const tok = speakToken;
+  if(a) await playBlob(a);
+  if(tok !== speakToken) return;
+  await new Promise(r => setTimeout(r, 500));
+  if(z && tok === speakToken) await playBlob(z);
+};
+
 /* ---------- your own text: paste English, it becomes a dictation ---------- */
 const NO_SPLIT = new Set("mr mrs ms dr st jr sr vs etc e.g i.e u.s u.k no fig approx inc ltd co corp dept ave blvd rd mt ft lb oz jan feb mar apr jun jul aug sep sept oct nov dec mon tue wed thu fri sat sun".split(" "));
 // sentences, with abbreviations like Dr. and a.m. kept inside
@@ -1306,7 +1500,7 @@ async function genSentences(){
 
 /* ---------- every play button is also a stop button ---------- */
 // press once: it plays (the button shows ■); press again at any moment: it stops
-const PLAY_SEL = ".line .play, .line .slow, .say, #rPlay, #rSlow, [data-pm]:not([data-pm=rec]), #mbReplay, #mbSlow, [data-dplay]";
+const PLAY_SEL = ".line .play, .line .slow, .say, #rPlay, #rSlow, [data-pm]:not([data-pm=rec]), #mbReplay, #mbSlow, [data-dplay], [data-vplay], #vcCompare";
 var playBtn_ = null, playWatch = null;
 function playOff(){
   clearInterval(playWatch); playWatch = null;
@@ -1414,6 +1608,7 @@ function renderTrResult(it, mine, r){
 function pushResult(kind, pct, extra){
   const h = store.get("history", []); h.push({k:kind, p:Math.round(pct), t:Date.now(), ...(extra || {})}); store.set("history", h.slice(-500)); cloudDirty();
   if((kind === "dict" || kind === "speak") && addWords()) paintBadge();
+  setTimeout(() => { sessHit(kind, extra?.d); paintGoal(); }, 0);
   setTimeout(checkGoal, 0);
   try{ navigator.storage?.persist?.(); }catch{}
 }
@@ -1684,6 +1879,7 @@ function checkRev(it, said){
   announce(pass ? "Верно" : "Пока не получилось");
 }
 function revEmpty(){
+  setTimeout(() => sessHit("revdone"), 0);
   const items = reviewItems(), rev = revState();
   const next = items.map(it => dueOf(it, rev)).filter(d => d > Date.now()).sort((a, b) => a - b)[0];
   const learned = items.filter(it => (rev[it.id]?.step || 0) >= 4).length;
@@ -2086,7 +2282,7 @@ if("serviceWorker" in navigator && location.protocol === "https:"){
 }
 
 /* ---------- account & sync (Firebase, like Pip's Sky Islands) ---------- */
-const PREF_KEYS = ["level", "topic", "custom", "rate", "voiceA", "voiceB", "accent", "goal"];
+const PREF_KEYS = ["level", "topic", "custom", "rate", "voiceA", "voiceB", "accent", "goal", "target"];
 function snapshot(){
   const prefs = {};
   for(const k of PREF_KEYS){ const v = store.get(k, null); if(v !== null) prefs[k] = v; }
@@ -2127,7 +2323,7 @@ function applySnapshot(x){
     if($("#trResult").hidden) renderTr();
   }
   if(state.view === "stats") renderStats();
-  addWords(); paintBadge(); paintToday();
+  addWords(); paintBadge(); paintToday(); paintGoal();
   if(state.view === "rev" && rpos >= rq.length) revEmpty();
 }
 
@@ -2234,6 +2430,7 @@ setMode(state.dmode); renderTr();
 paintAccess();
 addWords();
 paintBadge();
+paintGoal();
 paintToday();
 const openFromHash = () => { const h = location.hash.slice(1); if(TABS.includes(h) && h !== state.view) showView(h); };
 openFromHash(); addEventListener("hashchange", openFromHash);
