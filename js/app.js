@@ -608,44 +608,40 @@ $("#dGen").onclick = async () => {
 /* ---------- your own voice: record each try and play it next to the speaker ---------- */
 const CAN_REC = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
 let mine = [], recFails = 0, soloRec = null;
-// one audio context, created on the tap itself (iPhone only allows starting it from a tap)
-let actx = null;
-function audioCtx(){
-  try{ actx ||= new (window.AudioContext || window.webkitAudioContext)(); if(actx.state === "suspended") actx.resume(); }catch{ actx = null; }
-  return actx;
-}
 // MP4/AAC first: iPhone may record WebM but cannot always play it back
 const REC_TYPES = ["audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/aac", "audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
 async function startRec(){
   const stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}});
   const type = REC_TYPES.find(t => MediaRecorder.isTypeSupported?.(t)) || "";
   const mr = new MediaRecorder(stream, type ? {mimeType: type} : undefined), chunks = [];
-  // how loud the recording is: a silent one means the microphone went to speech recognition instead
-  let peak = -1, meter = null;
-  try{
-    const ctx = audioCtx();
-    if(ctx){
-      const src = ctx.createMediaStreamSource(stream), an = ctx.createAnalyser(); an.fftSize = 512; src.connect(an);
-      const buf = new Uint8Array(an.fftSize); peak = 0;
-      meter = setInterval(() => { an.getByteTimeDomainData(buf); for(const v of buf) peak = Math.max(peak, Math.abs(v - 128)); }, 80);
-    }
-  }catch{ peak = -1; }
   mr.ondataavailable = e => { if(e.data?.size) chunks.push(e.data); };
-  const done = new Promise(res => { mr.onstop = () => {
-    clearInterval(meter); stream.getTracks().forEach(t => t.stop());
+  const done = new Promise(res => { mr.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
     const blob = chunks.length ? new Blob(chunks, {type: mr.mimeType || type || "audio/mp4"}) : null;
-    if(blob) blob.peak = peak;
+    // how loud the finished recording is (measured on the file: live meters read zeros on iPhone)
+    if(blob) blob.peak = await loudness(blob);
     res(blob);
   }; });
   mr.start(250);
   const guard = setTimeout(() => { if(mr.state !== "inactive") mr.stop(); }, 20000);
   return { stop(){ clearTimeout(guard); if(mr.state !== "inactive") mr.stop(); return done; } };
 }
-// peak is -1 when it could not be measured; then trust the recording
-const silent = blob => !blob || blob.size < 800 || (blob.peak >= 0 && blob.peak < 4);
+// loudest sample, 0…1; -1 when the file could not be decoded (then we trust the recording)
+async function loudness(blob){
+  try{
+    const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext; if(!Ctx) return -1;
+    const ctx = new Ctx(1, 44100, 44100), data = await blob.arrayBuffer();
+    const audio = await new Promise((res, rej) => { const p = ctx.decodeAudioData(data, res, rej); if(p?.then) p.then(res, rej); });
+    let peak = 0;
+    for(let c = 0; c < audio.numberOfChannels; c++){ const ch = audio.getChannelData(c); for(let k = 0; k < ch.length; k += 4) peak = Math.max(peak, Math.abs(ch[k])); }
+    return peak;
+  }catch{ return -1; }
+}
+const silent = blob => !blob || blob.size < 600 || (blob.peak >= 0 && blob.peak < 0.01);
+const recInfo = blob => blob ? `${(blob.type || "?").split(";")[0]}, ${Math.round(blob.size / 1024)} КБ, уровень ${blob.peak < 0 ? "не измерен" : Math.round(blob.peak * 100) + "%"}` : "файла нет";
 // record without recognition (no speech recognition here, or it clashes with recording): tap to start, tap to stop
 async function recordOnly(i, btn, out){
-  stopSpeech(); audioCtx();
+  stopSpeech(); stopListening();
   let rec;
   try{ rec = await startRec(); }catch(e){ out.classList.add("err"); out.textContent = e?.name === "NotAllowedError" ? SR_ERR["not-allowed"] : "Не получилось включить микрофон."; return; }
   out.classList.remove("err"); out.textContent = "Идёт запись — скажите фразу и нажмите ещё раз.";
@@ -656,8 +652,7 @@ async function recordOnly(i, btn, out){
   btn.classList.remove("on", "rec-on"); btn.setAttribute("aria-pressed", "false"); row?.classList.remove("listening");
   const quiet = silent(blob);
   out.classList.toggle("err", quiet);
-  out.textContent = quiet ? "Запись получилась беззвучной. Проверьте, что сайту разрешён микрофон (на iPhone: Настройки → Приложения → Safari → Микрофон), и попробуйте ещё раз." : "";
-  if(quiet) return null;
+  out.textContent = quiet ? `Похоже, запись беззвучная (${recInfo(blob)}). Послушайте «Я»; если тишина — проверьте, что сайту разрешён микрофон: Настройки → Приложения → Safari → Микрофон.` : "";
   if(blob && i >= 0){ setMine(i, blob); paintMine(i); playMine(i, "both"); }
   return blob;
 }
@@ -954,7 +949,6 @@ async function sayLine(i){
   // no recognition here: just record yourself and compare
   if(!SR){ await recordOnly(i, row.querySelector(".mic"), heard); return; }
   const withRec = $("#sRec").checked && CAN_REC && !store.get("recSolo", false);
-  if(withRec) audioCtx();
   const rec = withRec ? await startRec().catch(() => null) : null;
   const r = await hearLine(d.lines[i].text, row.querySelector(".mic"), heard);
   const blob = rec ? await rec.stop() : null;
@@ -976,7 +970,7 @@ async function sayLine(i){
   el.innerHTML = `<span class="sc ${scClass(r.pct)}">${r.pct}%</span>${diffHTML(r.ops)}${r.pct >= SPEAK_PASS ? `<span class="ok-msg">✓</span>` : ""}${sBest[i].tries > 1 ? `<span class="tries">лучшая попытка: ${sBest[i].pct}%</span>` : ""}`;
   row.insertBefore(el, heard);
   paintMine(i);
-  if(rec && silent(blob)) heard.textContent = "Распознано. Записать голос одновременно с распознаванием этот телефон не даёт — нажмите «● Записать себя» и скажите фразу ещё раз, чтобы сравнить.";
+  if(rec && silent(blob)) heard.textContent = `Распознано. Записать голос одновременно с распознаванием этот телефон не даёт (${recInfo(blob)}) — нажмите «● Записать себя» и скажите фразу ещё раз, чтобы сравнить.`;
   announce(`${r.pct} процентов. ${r.pct >= SPEAK_PASS ? "Хорошо." : "Попробуйте ещё раз."}`);
   paintSpeakDone();
   if(r.pct >= SPEAK_PASS && i + 1 < d.lines.length){
