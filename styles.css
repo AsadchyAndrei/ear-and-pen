@@ -165,8 +165,8 @@ ins.w.miss{background:var(--miss-soft);color:var(--miss);border:1px dashed var(-
 /* loading the HD voice: the play button turns into a spinner */
 .spin{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite;flex:none}
 @keyframes sp{to{transform:rotate(360deg)}}
-.line.loading .play svg,#mbar.loading #mbReplay svg,#mbar.loading #mbSlow svg{display:none}
-.line.loading .play::after,#mbar.loading #mbReplay::before{content:"";width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite}
+.line.loading .play svg{display:none}
+.line.loading .play::after{content:"";width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite}
 .dacts .strict{gap:6px;margin-left:auto}
 .summary{display:flex;flex-wrap:wrap;gap:18px;align-items:center;padding:14px 16px;background:var(--sunk);border-radius:var(--r)}
 .big{font-family:var(--f-display);font-size:40px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
@@ -295,17 +295,9 @@ html.locked body{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 .linkbtn{background:none;border:0;padding:0;color:var(--accent);font:inherit;font-size:14px;cursor:pointer;text-decoration:underline;text-underline-offset:2px;align-self:flex-start}
 .steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:15px;max-width:calc(100% - 32px);z-index:30;box-shadow:0 6px 24px rgba(0,0,0,.2);display:flex;align-items:center;gap:10px}
-body.has-mbar .toast{bottom:calc(96px + env(safe-area-inset-bottom,0px))}
 .toastbtn{background:var(--accent);color:var(--accent-ink);border:0;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer;min-height:32px}
 
 /* ---------- phone dictation bar: sits above the on-screen keyboard ---------- */
-#mbar{position:fixed;left:0;right:0;bottom:0;z-index:15;background:var(--surface);border-top:1px solid var(--line);
-  padding:8px max(12px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
-  display:flex;gap:8px;align-items:center;box-shadow:0 -6px 20px rgba(0,0,0,.08)}
-#mbar .btn{min-height:48px;flex:1;justify-content:center;padding:8px 6px;font-size:15px}
-#mbar .btn.primary{flex:1.4}
-#mbar .pos{font-family:var(--f-mono);font-size:13px;color:var(--muted);min-width:42px;text-align:center}
-body.has-mbar{padding-bottom:calc(88px + env(safe-area-inset-bottom, 0px))}
 
 /* ---------- phones ---------- */
 @media (max-width:560px){
@@ -355,11 +347,15 @@ body.has-mbar{padding-bottom:calc(88px + env(safe-area-inset-bottom, 0px))}
   .verdict{gap:12px}
 }
 
-/* phone dictation: one line in focus; the bar above the keyboard plays and moves on */
+/* phone dictation: one line in focus; the keyboard key «Далее» plays the next line */
 body.phone .line{grid-template-columns:1fr;padding:8px 8px 8px 10px;gap:6px}
 body.phone .who{width:auto}
 body.phone .result,body.phone .reveal{grid-column:1}
-body.phone #view-dict:not(.checked) .ctrls{display:none}
+/* phone, writing: ▶ and 🐢 next to the speaker's name, the field under them */
+body.phone #view-dict:not(.speak) .line{grid-template-columns:1fr auto;align-items:center}
+body.phone #view-dict:not(.speak) .line > input{grid-column:1/-1}
+body.phone #view-dict:not(.speak):not(.checked) .ctrls{display:flex;gap:6px}
+body.phone #view-dict.speak:not(.checked) .ctrls{display:none}
 body.phone #view-dict.checked .ctrls .slow{display:none}
 body.phone #view-dict.checked .line{grid-template-columns:auto 1fr}
 body.phone #view-dict.checked .who{grid-column:1/-1}
@@ -368,9 +364,8 @@ body.phone .line:not(.cur) input{font-size:16px;padding:8px 11px}
 body.phone #view-dict:not(.checked) .line.cur{background:var(--sunk)}
 body.phone #view-dict:not(.checked) .line.cur.playing{background:var(--accent-soft)}
 body.phone #view-dict:not(.checked) .line.cur input{font-size:18px;padding:13px 14px;border-color:var(--accent)}
-@media (min-width:561px) and (pointer:fine){#mbar{display:none!important} body.has-mbar{padding-bottom:48px}}
 @media (display-mode: standalone){body{padding-block-start:max(12px, env(safe-area-inset-top, 0px))}}
-@media (prefers-reduced-motion: reduce){.spin,.eq i,.acct .dot,.line.loading .play::after,#mbar.loading #mbReplay::before{animation-duration:3s} .line{transition:none}}
+@media (prefers-reduced-motion: reduce){.spin,.eq i,.acct .dot,.line.loading .play::after{animation-duration:3s} .line{transition:none}}
 .rcard #rPlay.loading svg{display:none}
 .rcard #rPlay.loading::before{content:"";width:16px;height:16px;border:2px solid color-mix(in srgb, var(--accent-ink) 40%, transparent);border-top-color:var(--accent-ink);border-radius:50%;animation:sp .8s linear infinite}
 
@@ -528,7 +523,6 @@ dialog.sheet::backdrop{background:rgba(10,20,28,.42);-webkit-backdrop-filter:blu
 /* ---------- session bar ---------- */
 .sessbar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:16;width:min(640px,calc(100% - 24px));
   background:var(--fg);color:var(--bg);border-radius:14px;padding:10px 10px 10px 14px;display:flex;gap:10px;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.25)}
-body.has-mbar .sessbar{bottom:calc(76px + env(safe-area-inset-bottom,0px))}
 body.has-sess{padding-bottom:110px}
 .sb-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
 .sb-step{font-size:12px;opacity:.75}
@@ -618,5 +612,4 @@ body.has-sess{padding-bottom:110px}
 .civcard{transition:background .2s}
 .civcard.listening{background:var(--err-soft)}
 @media (prefers-reduced-motion: reduce){#civMic.on,#rdMic.on{animation:none}}
-body.kb #mbar{padding-bottom:8px;box-shadow:none}
 body.kb .sessbar,body.kb .toast{visibility:hidden}

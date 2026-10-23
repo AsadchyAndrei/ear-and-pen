@@ -281,7 +281,6 @@ function setLoading(on){
   const apply = f => {
     document.querySelectorAll(".line.loading").forEach(l => l.classList.remove("loading"));
     if(f) $(".line.cur")?.classList.add("loading");
-    $("#mbar").classList.toggle("loading", f);
     $("#rPlay")?.classList.toggle("loading", f);
   };
   if(on) loadT = setTimeout(() => apply(true), 150); else apply(false);
@@ -462,8 +461,6 @@ let cur = 0;
 function setCur(i){
   cur = Math.max(0, Math.min(i, dialogs[dIdx].lines.length - 1));
   document.querySelectorAll(".line").forEach(l => l.classList.toggle("cur", +l.dataset.i === cur));
-  $("#mbPos").textContent = `${cur + 1}/${dialogs[dIdx].lines.length}`;
-  setLabel($("#mbNext"), cur === dialogs[dIdx].lines.length - 1 ? "Проверить" : "Дальше", ["Проверить", "Дальше"]);
 }
 async function playLine(i, mul = 1){
   const d = dialogs[dIdx]; stopSpeech(); const tok = speakToken;
@@ -475,6 +472,7 @@ async function playLine(i, mul = 1){
 }
 $("#lines").addEventListener("click", e => {
   const row = e.target.closest(".line"); if(!row) return; const i = +row.dataset.i;
+  if(e.target.closest(".play, .slow") && state.dmode !== "speak" && !dChecked) lineInput(i)?.focus();
   if(e.target.closest(".play")) playLine(i);
   if(e.target.closest(".slow")) playLine(i, 0.75);
   if(e.target.closest(".mic")) sayLine(i);
@@ -1513,7 +1511,7 @@ async function genSentences(){
 
 /* ---------- every play button is also a stop button ---------- */
 // press once: it plays (the button shows ■); press again at any moment: it stops
-const PLAY_SEL = ".line .play, .line .slow, .say, #rPlay, #rSlow, [data-pm]:not([data-pm=rec]), #mbReplay, #mbSlow, [data-dplay], [data-vplay], #vcCompare";
+const PLAY_SEL = ".line .play, .line .slow, .say, #rPlay, #rSlow, [data-pm]:not([data-pm=rec]), [data-dplay], [data-vplay], #vcCompare";
 var playBtn_ = null, playWatch = null;
 function playOff(){
   clearInterval(playWatch); playWatch = null;
@@ -2447,27 +2445,15 @@ function showToast(msg, action, ms = 4500){
 function isPhone(){ return matchMedia("(max-width:560px), (pointer:coarse)").matches; }
 function updateBar(){
   document.body.classList.toggle("phone", isPhone());
-  const show = state.view === "dict" && isPhone() && !dChecked && state.dmode !== "speak";
-  $("#mbar").hidden = !show;
-  document.body.classList.toggle("has-mbar", show);
 }
 const lineInput = i => $(`.line[data-i="${i}"] input`);
-// keep the keyboard open: tapping the bar must not take focus from the line being typed
-$("#mbar").addEventListener("mousedown", e => e.preventDefault());
-$("#mbReplay").onclick = () => { const i = cur; lineInput(i)?.focus(); playLine(i); };
-$("#mbSlow").onclick = () => { const i = cur; lineInput(i)?.focus(); playLine(i, 0.75); };
-$("#mbNext").onclick = () => {
-  const n = dialogs[dIdx].lines.length, next = cur + 1;
-  if(next < n){ lineInput(next)?.focus(); playLine(next); }
-  else { document.activeElement?.blur?.(); checkDictation(); }
-};
+// keep the keyboard open: tapping a line's ▶ or 🐢 must not take focus from the line being typed
+$("#lines").addEventListener("mousedown", e => { if(e.target.closest(".ctrls .btn") && document.activeElement?.closest?.("#lines")) e.preventDefault(); });
 if(window.visualViewport){
   const place = () => {
     const vv = visualViewport, kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
-    const open = kb > 80;
-    // with the keyboard open the bar sits right on top of it: no home-indicator gap under the buttons
-    document.body.classList.toggle("kb", open);
-    $("#mbar").style.transform = open ? `translateY(${-kb}px)` : "";
+    // while typing, nothing sits between the line and the keyboard
+    document.body.classList.toggle("kb", kb > 80);
   };
   visualViewport.addEventListener("resize", place);
   visualViewport.addEventListener("scroll", place);
