@@ -126,7 +126,7 @@ async function stt(request, url, env, headers, ip) {
   else if (++h.n > Number(env.STT_PER_MINUTE || 30)) return json({ error: "rate_limited" }, 429, headers);
   const l = url.searchParams.get("l") || "en-US";
   if (!TTS_LOCALES.has(l)) return json({ error: "bad_request" }, 400, headers);
-  const model = STT_MODELS.has(url.searchParams.get("m")) ? url.searchParams.get("m") : (env.STT_MODEL || "latest_long");
+  const model = STT_MODELS.has(url.searchParams.get("m")) ? url.searchParams.get("m") : (env.STT_MODEL || "default");
   const buf = new Uint8Array(await request.arrayBuffer());
   if (buf.length < 3200 || buf.length > MAX_STT) return json({ error: buf.length < 3200 ? "too_short" : "too_large" }, 400, headers);
   if (!(await useQuota(env.AUDIO, me.uid, "stt", Number(env.STT_DAILY_LIMIT || 400)))) return json({ error: "daily_limit" }, 429, headers);
