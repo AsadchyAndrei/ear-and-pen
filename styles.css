@@ -435,3 +435,5 @@ body.phone .ownbtn{display:none}
 .mine .btn.on{background:var(--accent-soft);border-color:var(--accent)}
 .mine .rec-on{background:var(--err);border-color:var(--err);color:#fff}
 body.phone #view-dict.speak .mine{grid-column:1/-1}
+.toast.upd{z-index:31}
+#sWho{color:var(--fg)}

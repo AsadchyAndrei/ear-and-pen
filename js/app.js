@@ -48,6 +48,7 @@ function paintAccess(){
     b.toggleAttribute("data-locked", locked); b.title = tip;
   });
   const gl = $("#trCheck .gl"); if(gl) gl.textContent = locked ? "Сверить с эталоном" : "Проверить";
+  try{ paintWho(); $("#sNo").hidden = !!SR || serverSTT(); }catch{}
 }
 function needAccess(what){
   if(canAI()) return true;
@@ -1075,12 +1076,17 @@ function finishSpeak(){
   announce(`Итог: распознано ${avg} процентов.`);
   setTimeout(() => $("#dSummary").scrollIntoView({block: "nearest", behavior: "smooth"}), 50);
 }
+function paintWho(){
+  const el = $("#sWho"); if(!el) return;
+  el.textContent = serverSTT() ? "Распознаёт сервер (Google): нажмите на микрофон, скажите фразу, нажмите ещё раз." : SR ? "Распознаёт браузер." + (canAI() ? "" : " После входа распознавать будет сервер — точнее и с записью вашего голоса на любом телефоне.") : "";
+}
 function setMode(m){
   stopListening();
   state.dmode = m; store.set("dmode", m);
   $("#view-dict").classList.toggle("speak", m === "speak");
   document.querySelectorAll("#modeSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.m === m)));
-  $("#sNo").hidden = !!SR;
+  $("#sNo").hidden = !!SR || serverSTT();
+  paintWho();
   if(!SR && !CAN_REC) $("#sNo").textContent = "Этот браузер не умеет ни распознавать речь, ни записывать звук. Откройте сайт в Chrome, Edge или Safari.";
   renderDialog(); updateBar();
 }
@@ -1845,16 +1851,31 @@ $("#iosClose").onclick = () => $("#iosSheet").close();
 if(standalone()) try{ navigator.storage?.persist?.(); }catch{}
 
 /* ---------- updates ---------- */
+const bootAt = Date.now();
+// nothing would be lost by reloading now: no typed lines, no recording, no open window
+const idle = () => ![...document.querySelectorAll(".line input, #trIn, #rIn, #ownText")].some(i => i.value.trim()) && !listening && ![...document.querySelectorAll("dialog")].some(d => d.open);
+let updEl = null;
+function updateBanner(w, apply){
+  // its own banner: the shared toast is replaced by other messages and the offer got lost
+  if(!updEl){ updEl = document.createElement("div"); updEl.className = "toast upd"; updEl.setAttribute("role", "status"); document.body.append(updEl); }
+  updEl.innerHTML = `Доступна новая версия <button class="toastbtn" type="button">Обновить</button>`;
+  updEl.hidden = false;
+  updEl.querySelector("button").onclick = () => { updEl.hidden = true; apply(); };
+}
 if("serviceWorker" in navigator && location.protocol === "https:"){
   let askedReload = false;
-  navigator.serviceWorker.register("sw.js").then(reg => {
-    const offer = w => showToast("Доступна новая версия", { label: "Обновить", fn: () => { askedReload = true; w.postMessage("skip"); } }, 0);
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg => {
+    const apply = w => { askedReload = true; w.postMessage("skip"); };
+    // found right after opening (or while nothing is in progress): update straight away
+    const offer = w => (Date.now() - bootAt < 20000 && idle()) ? apply(w) : updateBanner(w, () => apply(w));
     if(reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting);
     reg.addEventListener("updatefound", () => {
       const w = reg.installing;
       w?.addEventListener("statechange", () => { if(w.state === "installed" && navigator.serviceWorker.controller) offer(w); });
     });
     setInterval(() => reg.update().catch(() => {}), 60 * 60 * 1000);
+    // an app on the home screen can stay open for days: look for a new version whenever it comes back
+    document.addEventListener("visibilitychange", () => { if(document.visibilityState === "visible") reg.update().catch(() => {}); });
   }).catch(() => {});
   navigator.serviceWorker.addEventListener("controllerchange", () => { if(askedReload) location.reload(); });
 }
@@ -1957,7 +1978,11 @@ function acctMsg(err, ok){
   $("#acctErr").hidden = !err; $("#acctErr").textContent = err || "";
   $("#acctOk").hidden = !ok; $("#acctOk").textContent = ok || "";
 }
+async function paintVersion(){
+  try{ const v = (await caches.keys()).filter(k => /^ep-v\d+$/.test(k)).map(k => +k.slice(4)).sort((a, b) => b - a)[0]; $("#verInfo").textContent = v ? `Версия приложения: ${v}` : ""; }catch{}
+}
 function openAcct(why){
+  paintVersion();
   if(!cloud){ showToast(FIREBASE ? "Вход загружается…" : "Вход и синхронизация скоро появятся."); return; }
   $("#acctWhy").hidden = !why; $("#acctWhy").textContent = why || "";
   acctMsg(); acctUI(); if(!$("#acctSheet").open) $("#acctSheet").showModal();

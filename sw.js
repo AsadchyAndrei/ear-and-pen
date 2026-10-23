@@ -2,8 +2,8 @@
    Own files: network first (always fresh when online), but never wait long: offline or on a weak connection
    the saved copy opens right away. Fonts and the Firebase library: saved and served from the cache, so the app
    looks the same offline. Claude and the voice server go straight to the network (voice audio is kept by the app itself).
-   A new version waits until the person taps "Обновить" (the app sends "skip"). */
-const V = 'ep-v19', RT = 'ep-rt-v1';
+   A new version waits until the person taps "Обновить" (the app sends "skip"); right after the app opens it applies itself. */
+const V = 'ep-v20', RT = 'ep-rt-v1';
 const CORE = ['./', 'index.html', 'styles.css', 'js/app.js', 'js/merge.js', 'js/cloud.js', 'prompts.js', 'content.js', 'config.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon.svg', 'icons/badge-96.png', 'favicon.ico'];
 const FONT_CSS = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Source+Sans+3:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap';
@@ -39,7 +39,9 @@ self.addEventListener('fetch', e => {
   if (r.method !== 'GET') return;
   const u = new URL(r.url);
   if (u.origin === location.origin) {
-    const net = fetch(r).then(res => {
+    // ask the server every time (a 304 is cheap): GitHub Pages lets browsers keep files for 10 minutes,
+    // which mixed a new page with old code right after an update
+    const net = (r.mode === 'navigate' ? fetch(r.url, { cache: 'no-cache', credentials: 'same-origin' }) : fetch(new Request(r, { cache: 'no-cache' }))).then(res => {
       if (res.ok) { const cp = res.clone(); caches.open(V).then(c => c.put(r.mode === 'navigate' ? 'index.html' : r, cp)); }
       return res;
     });
