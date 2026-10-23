@@ -100,7 +100,8 @@ async function ai(task, params, opts = {}){
 /* ---------- prefs: level and topic live in one sheet, shown as a chip next to "new dialogue" ---------- */
 const state = {
   level: store.get("level","B1"), topic: store.get("topic","Повседневные ситуации"), custom: store.get("custom",""),
-  rate: store.get("rate",0.85), voiceA: store.get("voiceA",""), voiceB: store.get("voiceB",""), view: "dict"
+  rate: store.get("rate",0.85), voiceA: store.get("voiceA",""), voiceB: store.get("voiceB",""), view: "dict",
+  dmode: store.get("dmode","write") === "speak" ? "speak" : "write"
 };
 $("#level").value = state.level;
 // topics are ids from content.js; settings saved by the first version kept the Russian name
@@ -278,6 +279,7 @@ function prefetch(lines){
 let playingAll = false;
 const PLAY_I = `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>`;
 const PAUSE_I = `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>`;
+const MIC_I = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="5.5" y="1.75" width="5" height="8" rx="2.5"/><path d="M3.25 7.5a4.75 4.75 0 0 0 9.5 0M8 12.25v2"/></svg>`;
 const TURTLE = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 10.5h10a5 4.2 0 0 0-10 0z"/><path d="M12.5 9.8c.6-.9 1.4-1.3 2.2-1"/><path d="M4.5 10.5v2M10.5 10.5v2"/></svg>`;
 function paintPlayAll(){
   const b = $("#dPlayAll"); b.setAttribute("aria-pressed", String(playingAll));
@@ -354,21 +356,24 @@ function paintEyebrow(){
 }
 function renderDialog(){
   const d = dialogs[dIdx];
-  stopSpeech(); dChecked = false; dRecorded = false;
+  stopSpeech(); stopListening(); dChecked = false; dRecorded = false; sBest = []; sRecorded = false;
   $("#view-dict").classList.remove("checked");
   paintEyebrow();
   $("#dTitle").textContent = d.title;
   $("#dContext").textContent = d.context_ru || "";
   const sp = d.speakers || {};
+  const speakMode = state.dmode === "speak";
+  $("#lines").classList.toggle("hidetext", speakMode && !$("#sText").checked);
   $("#lines").innerHTML = d.lines.map((l,i) => { const who = sp[l.s] || l.s; return `
-    <div class="line" data-i="${i}">
+    <div class="line${speakMode ? " sp" : ""}" data-i="${i}">
       <div class="who ${l.s==="B"?"B":""}"><b aria-hidden="true">${l.s==="B"?"B":"A"}</b><span>${esc(who)}</span><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span></div>
       <div class="ctrls">
         <button class="btn play" type="button" title="Прослушать" aria-label="Прослушать строку ${i+1}">${PLAY_I}</button>
         <button class="btn slow" type="button" title="Медленно" aria-label="Медленно, строка ${i+1}">${TURTLE}</button>
       </div>
-      <input type="text" id="dl-${dIdx}-${i}" aria-label="Строка ${i+1}, ${esc(who)}: что вы услышали" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" lang="en" enterkeyhint="${i === d.lines.length - 1 ? "done" : "next"}" placeholder="Строка ${i+1}…">
+      ${speakMode ? `<div class="say"><span class="txt" lang="en">${esc(l.text)}</span><span class="txt-h">Текст скрыт — повторите на слух</span><button class="btn mic" type="button" title="Сказать" aria-label="Сказать строку ${i+1}" aria-pressed="false"${SR ? "" : " disabled"}>${MIC_I}</button></div>` : `<input type="text" id="dl-${dIdx}-${i}" aria-label="Строка ${i+1}, ${esc(who)}: что вы услышали" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" lang="en" enterkeyhint="${i === d.lines.length - 1 ? "done" : "next"}" placeholder="Строка ${i+1}…">`}
     </div>`; }).join("");
+  paintSpeakDone();
   $("#dSummary").hidden = $("#dExplainWrap").hidden = $("#dVocabWrap").hidden = $("#dPartial").hidden = true;
   store.set("dId", d.id || "");
   setCur(0);
@@ -431,6 +436,8 @@ $("#lines").addEventListener("click", e => {
   const row = e.target.closest(".line"); if(!row) return; const i = +row.dataset.i;
   if(e.target.closest(".play")) playLine(i);
   if(e.target.closest(".slow")) playLine(i, 0.75);
+  if(e.target.closest(".mic")) sayLine(i);
+  else if(state.dmode === "speak" && !e.target.closest("button")) setCur(i);
 });
 $("#lines").addEventListener("keydown", e => {
   const row = e.target.closest(".line"); if(!row || e.target.tagName !== "INPUT") return; const i = +row.dataset.i;
@@ -597,6 +604,192 @@ $("#dGen").onclick = async () => {
 
 /* ---------- translation ---------- */
 const LV = ["A2", "B1", "B2", "C1"];
+/* ---------- speaking: repeat a line aloud, the browser's speech recognition checks the words ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+const SPEAK_PASS = 85;
+let sBest = [], sRecorded = false, listening = null;
+// numbers are written in many ways: compare "$40", "forty dollars", "2:40" and "two forty" fairly
+const ONES = "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen".split(" ");
+const TENS = "  twenty thirty forty fifty sixty seventy eighty ninety".split(" ");
+function card(n, and){
+  if(n < 20) return ONES[n];
+  if(n < 100) return TENS[Math.floor(n / 10)] + (n % 10 ? " " + ONES[n % 10] : "");
+  if(n < 1000) return ONES[Math.floor(n / 100)] + " hundred" + (n % 100 ? (and ? " and " : " ") + card(n % 100) : "");
+  if(n < 1e6) return card(Math.floor(n / 1000), and) + " thousand" + (n % 1000 ? (and && n % 1000 < 100 ? " and " : " ") + card(n % 1000, and) : "");
+  return String(n);
+}
+// "two forty", "nineteen eighty five", "fourteen eighty", "one oh five"
+function pairs(n){
+  if(n >= 2000 && n < 2010) return "two thousand" + (n % 10 ? " " + ONES[n % 10] : "");
+  if(n >= 100 && n < 10000){
+    const hi = Math.floor(n / 100), lo = n % 100;
+    return card(hi) + (lo === 0 ? " hundred" : lo < 10 ? " oh " + ONES[lo] : " " + card(lo));
+  }
+  return card(n);
+}
+const ORD = {one: "first", two: "second", three: "third", five: "fifth", eight: "eighth", nine: "ninth", twelve: "twelfth"};
+const ordinal = w => w.replace(/(\w+)$/, x => ORD[x] || (x.endsWith("y") ? x.slice(0, -1) + "ieth" : x + "th"));
+const ABBR = [[/\ba\.\s?m\b\.?/g, "am"], [/\bp\.\s?m\b\.?/g, "pm"], [/\bdr\./g, "doctor"], [/\bmr\./g, "mister"], [/\bmrs\./g, "missus"], [/\bms\./g, "miz"], [/\bok\b/g, "okay"], [/\bst\./g, "street"], [/\bave\./g, "avenue"], [/\btv\b/g, "tv"]];
+function spNorm(text, style){
+  let s = String(text).replace(/[’‘`´]/g, "'").toLowerCase();
+  for(const [re, to] of ABBR) s = s.replace(re, to);
+  s = s.replace(/(\d),(\d{3})/g, "$1$2")
+    .replace(/\$(\d+(?:\.\d+)?)/g, "$1 dollars")
+    .replace(/(\d)\s?%/g, "$1 percent")
+    .replace(/\b(\d{1,2}):(\d{2})\b/g, (m, h, mm) => h + (mm === "00" ? "" : mm[0] === "0" ? " oh " + Number(mm) : " " + mm))
+    .replace(/\b(\d+)(st|nd|rd|th)\b/g, (m, n) => ordinal(card(Number(n))))
+    .replace(/\d+(?:\.\d+)?/g, m => {
+      const [a, b] = m.split("."), n = Number(a);
+      const w = style === "pairs" ? pairs(n) : card(n, style === "and");
+      return b ? w + " point " + [...b].map(x => ONES[x]).join(" ") : w;
+    })
+    .replace(/[-–—/&]/g, m => m === "&" ? " and " : " ");
+  return s;
+}
+// best match over the recognizer's alternatives and the ways numbers can be written
+function scoreSpeech(expected, alts){
+  let best = null;
+  for(const heard of alts) for(const style of ["plain", "and", "pairs"]){
+    const r = diff(spNorm(expected, style), spNorm(heard, style), false);
+    if(!best || r.pct > best.pct) best = {...r, heard, style};
+  }
+  if(!best) return {ops: [], pct: 0, heard: ""};
+  // show the line's own words (capitals, punctuation) when the numbers did not change the word count
+  const orig = toks(String(expected).replace(/[-–—/]/g, " ")).filter(w => norm(w, false));
+  const normed = toks(spNorm(expected, best.style)).filter(w => norm(w, false));
+  if(orig.length === normed.length){
+    let k = 0;
+    best.ops = best.ops.map(o => o.t === "extra" ? o : o.t === "eq" ? {...o, e: orig[k], w: orig[k++]} : {...o, e: orig[k++]});
+  }
+  return best;
+}
+const SR_ERR = {
+  "not-allowed": "Нет доступа к микрофону. Разрешите микрофон для этого сайта в настройках браузера.",
+  "service-not-allowed": "Распознавание речи недоступно. На iPhone проверьте, что включена диктовка: Настройки → Основные → Клавиатура → Диктовка.",
+  "audio-capture": "Микрофон не найден.",
+  "network": "Для распознавания речи нужен интернет.",
+  "language-not-supported": "Этот браузер не распознаёт английскую речь."
+};
+function stopListening(keep){ if(!listening) return; const r = listening; if(!keep) listening = null; try{ keep ? r.stop() : r.abort(); }catch{} }
+// one utterance → list of alternative transcripts (empty if nothing was heard)
+function listen(onInterim){
+  return new Promise((resolve, reject) => {
+    let r;
+    try{ r = new SR(); }catch(e){ reject("start"); return; }
+    listening = r;
+    r.lang = state.accent || "en-US"; r.interimResults = true; r.maxAlternatives = 5; r.continuous = false;
+    let alts = [], err = "";
+    const guard = setTimeout(() => { try{ r.stop(); }catch{} }, 15000);
+    r.onresult = e => {
+      const res = [...e.results];
+      onInterim?.(res.map(x => x[0].transcript).join(" ").trim());
+      if(res.every(x => x.isFinal)){
+        alts = res.length === 1 ? [...res[0]].map(a => a.transcript) : [res.map(x => x[0].transcript).join(" ")];
+      }
+    };
+    r.onerror = e => { err = e.error || "error"; };
+    r.onend = () => {
+      clearTimeout(guard); if(listening === r) listening = null;
+      if(alts.length) resolve(alts.filter(Boolean));
+      else if(err && err !== "no-speech" && err !== "aborted") reject(err);
+      else resolve([]);
+    };
+    try{ r.start(); }catch(e){ clearTimeout(guard); listening = null; reject("start"); }
+  });
+}
+// listen for one line: the button shows it is recording, live text goes to `out`
+async function hearLine(expected, btn, out){
+  if(!SR){ out.textContent = "Этот браузер не умеет распознавать речь."; return null; }
+  stopSpeech();
+  btn.classList.add("on"); btn.setAttribute("aria-pressed", "true");
+  out.classList.remove("err"); out.textContent = "Говорите…";
+  const row = btn.closest(".line"); row?.classList.add("listening");
+  let alts;
+  try{ alts = await listen(t => { if(t) out.textContent = "«" + t + "»"; }); }
+  catch(e){ out.classList.add("err"); out.textContent = SR_ERR[e] || "Не получилось включить микрофон. Попробуйте ещё раз."; alts = null; }
+  btn.classList.remove("on"); btn.setAttribute("aria-pressed", "false"); row?.classList.remove("listening");
+  if(!alts) return null;
+  if(!alts.length){ out.classList.add("err"); out.textContent = "Ничего не услышал. Нажмите на микрофон и скажите фразу целиком."; return null; }
+  const r = scoreSpeech(expected, alts);
+  out.textContent = r.pct < 100 ? "Распознано: «" + r.heard + "»" : "";
+  return r;
+}
+async function sayInto(text, btn, out){
+  const r = await hearLine(text, btn, out); if(!r) return;
+  out.innerHTML = `<span class="sc ${scClass(r.pct)}">${r.pct}%</span> ${diffHTML(r.ops)}${r.pct >= SPEAK_PASS ? `<b class="ok-msg">Хорошо!</b>` : ""}`;
+}
+async function sayLine(i){
+  if(listening){ stopListening(true); return; }
+  const d = dialogs[dIdx], row = $(`.line[data-i="${i}"]`); if(!row) return;
+  setCur(i);
+  let heard = row.querySelector(".heard");
+  if(!heard){ heard = document.createElement("div"); heard.className = "heard"; heard.setAttribute("aria-live", "polite"); row.append(heard); }
+  const r = await hearLine(d.lines[i].text, row.querySelector(".mic"), heard);
+  if(!r) return;
+  const prev = sBest[i];
+  sBest[i] = {...(prev && prev.pct > r.pct ? prev : r), tries: (prev?.tries || 0) + 1};
+  row.classList.add("done");
+  row.querySelector(".result")?.remove();
+  const el = document.createElement("div"); el.className = "result";
+  el.innerHTML = `<span class="sc ${scClass(r.pct)}">${r.pct}%</span>${diffHTML(r.ops)}${r.pct >= SPEAK_PASS ? `<span class="ok-msg">✓</span>` : ""}${sBest[i].tries > 1 ? `<span class="tries">лучшая попытка: ${sBest[i].pct}%</span>` : ""}`;
+  row.insertBefore(el, heard);
+  announce(`${r.pct} процентов. ${r.pct >= SPEAK_PASS ? "Хорошо." : "Попробуйте ещё раз."}`);
+  paintSpeakDone();
+  if(r.pct >= SPEAK_PASS && i + 1 < d.lines.length){
+    setCur(i + 1);
+    if(isPhone()) setTimeout(() => $(`.line[data-i="${i + 1}"]`)?.scrollIntoView({block: "center", behavior: "smooth"}), 300);
+  }
+}
+function paintSpeakDone(){
+  const n = dialogs[dIdx].lines.length, k = sBest.filter(Boolean).length;
+  $("#sDone").textContent = k ? `Итог · ${k} из ${n}` : "Итог";
+}
+function whySay(o){
+  const right = norm(o.e || "", false), yours = norm(o.w || "", false);
+  if(o.t === "miss") return WEAK.has(right) ? "Короткое слово «проглочено» — произнесите его чуть чётче." : "Слово не распозналось — проговорите его отдельно, потом во фразе.";
+  if(lev(yours, right) <= 2) return "Распозналось как похожее слово — проверьте гласные и окончание.";
+  return "Распозналось как другое слово — послушайте, как его произносит диктор.";
+}
+function finishSpeak(){
+  stopListening();
+  const d = dialogs[dIdx], n = d.lines.length, half = Math.ceil(n / 2);
+  const done = sBest.map((r, i) => r && {...r, i}).filter(Boolean);
+  if(!done.length){ showToast("Сначала скажите хотя бы одну строку: нажмите на микрофон."); return; }
+  const avg = Math.round(done.reduce((k, r) => k + r.pct, 0) / done.length);
+  const counts = done.length >= half;
+  const misses = done.flatMap(r => r.ops.filter(o => o.t === "sub" || o.t === "miss").map(o => ({o, ctx: d.lines[r.i].text})));
+  if(counts && !sRecorded){
+    sRecorded = true;
+    pushResult("speak", avg, {d: d.id || ""});
+    saveMistakes(misses.map(({o, ctx}) => ({kind: "speak", type: "pronunciation", yours: o.t === "miss" ? "(не распознано)" : bare(o.w), better: bare(o.e), why: whySay(o), ctx})).slice(0, 12));
+  }
+  const verdict = avg >= 95 ? "Отлично — почти всё распознано." : avg >= 80 ? "Хорошо. Повторите строки с подсвеченными словами." : avg >= 60 ? "Неплохо. Послушайте строки на 0.7× и повторите медленнее, чётко проговаривая окончания." : "Пока сложно. Слушайте строку, повторяйте по половинке, потом целиком.";
+  $("#dSummary").hidden = false;
+  $("#dSummary").innerHTML = `<div class="summary">
+      <div><div class="big">${avg}%</div><div class="note">распознано${done.length < n ? `<br>по ${done.length} из ${n} строк` : ""}</div></div>
+      <div style="flex:1;min-width:200px"><p style="margin:0">${verdict}</p>
+      <p class="note" style="margin-top:4px">${misses.length ? `Не распознано слов: ${misses.length}. ` : ""}${counts ? (misses.length ? "Они вернутся в «Повтор». " : "") : "В статистику не записано — сказано меньше половины строк. "}Распознавание — не экзаменатор: имена и редкие слова оно может не узнать. Смотрите на слова, которые не получаются несколько раз.</p></div>
+    </div>`;
+  if(d.vocab?.length){
+    $("#dVocabWrap").hidden = false;
+    $("#dVocab").innerHTML = d.vocab.map(v => `<li><span><b lang="en">${esc(v.en)}</b> — ${esc(v.ru)}</span>${playBtn(v.en)}</li>`).join("");
+  }
+  announce(`Итог: распознано ${avg} процентов.`);
+  setTimeout(() => $("#dSummary").scrollIntoView({block: "nearest", behavior: "smooth"}), 50);
+}
+function setMode(m){
+  stopListening();
+  state.dmode = m; store.set("dmode", m);
+  $("#view-dict").classList.toggle("speak", m === "speak");
+  document.querySelectorAll("#modeSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.m === m)));
+  $("#sNo").hidden = !!SR;
+  renderDialog(); updateBar();
+}
+$("#modeSeg").addEventListener("click", e => { const b = e.target.closest("[data-m]"); if(b && b.dataset.m !== state.dmode) setMode(b.dataset.m); });
+$("#sText").checked = store.get("sText", true);
+$("#sText").onchange = e => { store.set("sText", e.target.checked); $("#lines").classList.toggle("hidetext", !e.target.checked); };
+$("#sDone").onclick = finishSpeak;
+
 // sentences of the chosen topic, closest level first; then the same level from other topics
 function bankQueue(){
   const t = $("#topic").value, li = Math.max(0, LV.indexOf(state.level));
@@ -730,7 +923,7 @@ function saveMistakes(list){
   const t = Date.now();
   const m = store.get("mistakes", []); list.forEach((x, i) => m.unshift({...x, t: t + i})); store.set("mistakes", m.slice(0, 300)); cloudDirty(); paintBadge();
 }
-const TYPE_RU = {listening:"на слух", grammar:"грамматика", tense:"время", articles:"артикли", prepositions:"предлоги", "word order":"порядок слов", vocabulary:"слова", spelling:"орфография", punctuation:"пунктуация", style:"стиль", meaning:"смысл"};
+const TYPE_RU = {pronunciation:"произношение", listening:"на слух", grammar:"грамматика", tense:"время", articles:"артикли", prepositions:"предлоги", "word order":"порядок слов", vocabulary:"слова", spelling:"орфография", punctuation:"пунктуация", style:"стиль", meaning:"смысл"};
 const plural = (n, one, few, many) => { const a = n % 10, b = n % 100; return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many; };
 // older dictation mistakes kept the whole sentence in "why"; show it as context instead
 const ctxOf = x => x.ctx || (x.kind === "dict" && /^Ослышка: «/.test(x.why || "") ? x.why.slice(10, -1) : "");
@@ -740,16 +933,19 @@ function renderStats(){
   const h = store.get("history", []);
   const part = k => h.filter(x => x.k === k);
   const avg = a => a.length ? Math.round(a.reduce((s,x) => s + x.p, 0) / a.length) : null;
-  const d = part("dict"), t = part("tr");
+  const d = part("dict"), t = part("tr"), sp = part("speak");
   const sk = streakInfo();
+  $("#stats").classList.toggle("k4", sp.length > 0);
   $("#stats").innerHTML = `
     <div class="kpi"><div class="lbl">Диктанты</div><div class="big">${d.length}</div><div class="note">${d.length ? `точность ${avg(d)}%` : "пока нет"}</div></div>
+    ${sp.length ? `<div class="kpi"><div class="lbl">Речь</div><div class="big">${sp.length}</div><div class="note">распознано ${avg(sp)}%</div></div>` : ""}
     <div class="kpi"><div class="lbl">Переводы</div><div class="big">${t.length}</div><div class="note">${t.length ? `балл ${avg(t)}/100` : "пока нет"}</div></div>
     <div class="kpi"><div class="lbl">Серия</div><div class="big">${sk.n}</div><div class="note">${plural(sk.n, "день", "дня", "дней")}${sk.best > sk.n ? ` · рекорд ${sk.best}` : ""}</div></div>`;
   const bars = (a, label) => `<div><div class="lbl">${label}, последние ${Math.min(24, a.length)}</div><div class="bars" role="img" aria-label="${label}: от ${Math.min(...a.slice(-24).map(x => x.p))} до ${Math.max(...a.slice(-24).map(x => x.p))} процентов">${a.slice(-24).map(x => `<span class="${x.p<65?"lo":""}" style="height:${Math.max(4,x.p)}%" title="${x.p}%"></span>`).join("")}</div></div>`;
   const trend = [];
   if(d.length >= 5) trend.push(bars(d, "Диктанты"));
   if(t.length >= 5) trend.push(bars(t, "Переводы"));
+  if(sp.length >= 5) trend.push(bars(sp, "Речь"));
   $("#trend").className = trend.length ? "trend" : "";
   $("#trend").innerHTML = trend.join("") || (h.length ? `<p class="note">График появится после пяти занятий одного вида.</p>` : "");
   const f = $("#mFilter").value;
@@ -761,7 +957,7 @@ function renderStats(){
       ${why ? `<div class="why">${esc(why)}</div>` : ""}
       ${whenOf(x) ? `<div class="when">${whenOf(x)}</div>` : ""}
       ${ctx ? `<div class="ctx"><span lang="en">${esc(ctx)}</span>${playBtn(ctx)}</div>` : x.ru ? `<div class="ctx"><span lang="ru">${esc(x.ru)}</span></div>` : ""}
-      ${ctx ? `<div class="acts"><button class="btn" type="button" data-drill>Повторить на слух</button></div>` : x.ru ? `<div class="acts"><button class="btn" type="button" data-again>Перевести снова</button></div>` : ""}
+      ${ctx && x.kind === "speak" ? `<div class="acts"><button class="btn" type="button" data-sdrill${SR ? "" : " disabled"}>${MIC_I}Сказать ещё раз</button></div>` : ctx ? `<div class="acts"><button class="btn" type="button" data-drill>Повторить на слух</button></div>` : x.ru ? `<div class="acts"><button class="btn" type="button" data-again>Перевести снова</button></div>` : ""}
     </li>`; }).join("")
     : `<li class="empty">Здесь появятся ваши ошибки после первых проверок — по ним удобно повторять.</li>`;
 }
@@ -780,6 +976,13 @@ $("#mList").addEventListener("click", e => {
     stopSpeech(); speak(ctx, "A");
   }
   if(e.target.closest("[data-dplay]")){ stopSpeech(); speak(ctx, "A"); }
+  const sd = e.target.closest("[data-sdrill]");
+  if(sd){
+    let out = card.querySelector(".drill .out");
+    if(!out){ const box = document.createElement("div"); box.className = "drill"; box.innerHTML = `<div class="out" aria-live="polite"></div>`; card.append(box); out = box.querySelector(".out"); }
+    if(listening){ stopListening(true); return; }
+    sayInto(ctx, sd, out);
+  }
   if(e.target.closest("[data-dcheck]")){
     const r = diff(ctx, card.querySelector(".drill input").value, false);
     card.querySelector(".drill .out").innerHTML = `<span class="sc ${scClass(r.pct)}">${r.pct}%</span> ${diffHTML(r.ops)}${r.pct === 100 ? ` <b class="ok-msg">Верно!</b>` : ""}`;
@@ -798,13 +1001,13 @@ $("#mYes").onclick = () => { store.set("history", []); store.set("mistakes", [])
 /* ---------- review: mistakes come back after 1, 3, 7, 14, 30, 60 days ---------- */
 const DAY = 864e5, STEPS = [1, 3, 7, 14, 30, 60];
 const normPhrase = t => String(t || "").toLowerCase().replace(/[’‘`´]/g, "'").replace(/[^\p{L}\p{N}' ]+/gu, " ").replace(/\s+/g, " ").trim();
-const idOf = x => x.kind === "dict" && ctxOf(x) ? "d:" + ctxOf(x) : x.kind === "tr" && x.ru ? "t:" + x.ru : "";
+const idOf = x => x.kind === "dict" && ctxOf(x) ? "d:" + ctxOf(x) : x.kind === "speak" && x.ctx ? "s:" + x.ctx : x.kind === "tr" && x.ru ? "t:" + x.ru : "";
 // one card per sentence: several mistakes in the same sentence are practised together
 function reviewItems(){
   const map = new Map();
   for(const x of store.get("mistakes", [])){
     const id = idOf(x); if(!id) continue;
-    const it = map.get(id) || (x.kind === "dict" ? {id, kind: "dict", text: ctxOf(x), frags: [], t: x.t} : {id, kind: "tr", ru: x.ru, en: x.en || "", frags: [], t: x.t});
+    const it = map.get(id) || (x.kind === "dict" || x.kind === "speak" ? {id, kind: x.kind, text: ctxOf(x), frags: [], t: x.t} : {id, kind: "tr", ru: x.ru, en: x.en || "", frags: [], t: x.t});
     if(x.better && !it.frags.some(f => f.better === x.better)) it.frags.push({yours: x.yours, better: x.better, why: whyOf(x)});
     it.t = Math.min(it.t || x.t, x.t || it.t);
     if(it.kind === "tr" && !it.en && x.en) it.en = x.en;
@@ -853,7 +1056,7 @@ function speakCtx(text, mul = 1){
 let rq = [], rpos = 0, rdone = 0, rtotal = 0, rretry = new Set();
 function startRev(){
   rq = dueItems(); rpos = 0; rdone = 0; rtotal = rq.length; rretry = new Set();
-  rq.filter(it => it.kind === "dict").slice(0, 6).forEach(it => {
+  rq.filter(it => it.kind !== "tr").slice(0, 6).forEach(it => {
     let who = "A"; for(const d of dialogs){ const l = d.lines.find(l => l.text === it.text); if(l){ who = l.s; break; } }
     const pick = pickFor(who); if(hdOn && pick.startsWith("g:")) hdBlob(it.text, pick.slice(2), nearestRate(state.rate)).catch(() => {});
   });
@@ -866,6 +1069,34 @@ function renderRev(){
   $("#revPos").textContent = `${rpos + 1} / ${rq.length}`;
   $("#revBar").hidden = false; $("#revFill").style.width = `${Math.round(rpos / rq.length * 100)}%`;
   if(it.kind === "dict"){
+    card.innerHTML = `<div class="rcard">
+      <div class="kind"><span class="chip">на слух</span><span class="note">Прослушайте и напишите фразу целиком.</span></div>
+      <div class="listen"><button class="btn primary big" id="rPlay" type="button">${PLAY_I}Слушать</button><button class="btn big" id="rSlow" type="button">${TURTLE}Медленно</button></div>
+      <input type="text" id="rIn" aria-label="Что вы услышали" placeholder="Что вы услышали?" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" lang="en" enterkeyhint="done">
+      <div class="row" id="rActs"><button class="btn primary" id="rCheck" type="button">Проверить</button><button class="btn ghost" id="rSkip" type="button">Пропустить</button></div>
+      <div id="rRes"></div></div>`;
+    $("#rPlay").onclick = () => speakCtx(it.text);
+    $("#rSlow").onclick = () => speakCtx(it.text, 0.75);
+  } else if(it.kind === "speak" && SR){
+    card.innerHTML = `<div class="rcard">
+      <div class="kind"><span class="chip">вслух</span><span class="note">Послушайте и повторите фразу вслух.</span></div>
+      <div class="en" lang="en">${esc(it.text)}</div>
+      ${it.frags.length ? `<div class="focus">В прошлый раз не распознались: ${it.frags.map(f => `<ins class="w" lang="en">${esc(f.better)}</ins>`).join(", ")}</div>` : ""}
+      <div class="listen"><button class="btn big" id="rPlay" type="button">${PLAY_I}Слушать</button><button class="btn big" id="rSlow" type="button">${TURTLE}Медленно</button></div>
+      <div class="row" id="rActs"><button class="btn mic big" id="rMic" type="button" aria-pressed="false">${MIC_I}Сказать</button><button class="btn ghost" id="rSkip" type="button">Пропустить</button></div>
+      <div class="heard" id="rHeard" aria-live="polite"></div>
+      <div id="rRes"></div></div>`;
+    $("#rPlay").onclick = () => speakCtx(it.text);
+    $("#rSlow").onclick = () => speakCtx(it.text, 0.75);
+    $("#rMic").onclick = async () => {
+      if(listening){ stopListening(true); return; }
+      const r = await hearLine(it.text, $("#rMic"), $("#rHeard"));
+      if(r) checkRev(it, r);
+    };
+    $("#rSkip").onclick = () => { stopListening(); rpos++; renderRev(); };
+    return;
+  } else if(it.kind === "speak"){
+    // no speech recognition here: practise it by ear instead
     card.innerHTML = `<div class="rcard">
       <div class="kind"><span class="chip">на слух</span><span class="note">Прослушайте и напишите фразу целиком.</span></div>
       <div class="listen"><button class="btn primary big" id="rPlay" type="button">${PLAY_I}Слушать</button><button class="btn big" id="rSlow" type="button">${TURTLE}Медленно</button></div>
@@ -891,11 +1122,14 @@ function renderRev(){
   });
   if(!isPhone()) $("#rIn").focus();
 }
-function checkRev(it){
-  const v = $("#rIn").value.trim(); if(!v){ $("#rIn").focus(); return; }
+function checkRev(it, said){
+  const v = said ? "" : $("#rIn").value.trim(); if(!said && !v){ $("#rIn").focus(); return; }
   const before = revState()[it.id];
   let pass, body;
-  if(it.kind === "dict"){
+  if(said){
+    pass = said.pct >= SPEAK_PASS;
+    body = `<div class="diffline"><span class="sc ${scClass(said.pct)}">${said.pct}%</span> ${diffHTML(said.ops)}</div>`;
+  } else if(it.kind !== "tr"){
     const d = diff(it.text, v, false);
     pass = d.pct >= 90;
     body = `<div class="diffline"><span class="sc ${scClass(d.pct)}">${d.pct}%</span> ${diffHTML(d.ops)}</div>`;
@@ -912,7 +1146,7 @@ function checkRev(it){
   const retry = !pass && !rretry.has(it.id);
   if(retry){ rretry.add(it.id); rq.push(it); }
   rdone++;
-  $("#rActs").hidden = true; $("#rIn").readOnly = true;
+  $("#rActs").hidden = true; if($("#rIn")) $("#rIn").readOnly = true;
   const res = ok => `<div class="rres ${ok ? "pass" : "fail"}"><div class="head">${ok ? "Верно!" : "Пока не получилось"}</div>${body}
     <div class="next">${ok ? `Следующий повтор — через ${daysWord(ok === true ? days : ok)}.` : retry ? "Повторим ещё раз в конце и завтра." : "Вернёмся к этой карточке завтра."}</div>
     <div class="row"><button class="btn primary" id="rNext" type="button">${rpos + 1 < rq.length ? "Дальше →" : "Готово"}</button>${!ok && it.kind === "tr" ? `<button class="btn" id="rOk" type="button">Я ответил верно</button>` : ""}</div></div>`;
@@ -950,7 +1184,7 @@ const dk = (ts = Date.now()) => { const d = new Date(ts); return `${d.getFullYea
 const goalCfg = () => ({ d: 1, t: 5, r: true, ...(store.get("goal", null) || {}) });
 function todayCounts(){
   const today = dk(), c = {dict: 0, tr: 0, rev: 0};
-  for(const h of store.get("history", [])) if(dk(h.t) === today && h.k in c) c[h.k]++;
+  for(const h of store.get("history", [])){ const k = h.k === "speak" ? "dict" : h.k; if(dk(h.t) === today && k in c) c[k]++; }
   return c;
 }
 function goalState(){
@@ -1098,7 +1332,7 @@ function showToast(msg, action, ms = 4500){
 function isPhone(){ return matchMedia("(max-width:560px), (pointer:coarse)").matches; }
 function updateBar(){
   document.body.classList.toggle("phone", isPhone());
-  const show = state.view === "dict" && isPhone() && !dChecked;
+  const show = state.view === "dict" && isPhone() && !dChecked && state.dmode !== "speak";
   $("#mbar").hidden = !show;
   document.body.classList.toggle("has-mbar", show);
 }
@@ -1339,7 +1573,7 @@ async function bootCloud(){
 }
 
 if(!synth) showToast("Этот браузер не умеет озвучивать текст. Откройте страницу в Chrome или Safari.");
-renderDialog(); renderTr();
+setMode(state.dmode); renderTr();
 paintAccess();
 paintBadge();
 paintToday();

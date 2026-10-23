@@ -368,3 +368,36 @@ body.phone #view-dict:not(.checked) .line.cur input{font-size:18px;padding:13px 
 @media (prefers-reduced-motion: reduce){.spin,.eq i,.acct .dot,.line.loading .play::after,#mbar.loading #mbReplay::before{animation-duration:3s} .line{transition:none}}
 .rcard #rPlay.loading svg{display:none}
 .rcard #rPlay.loading::before{content:"";width:16px;height:16px;border:2px solid color-mix(in srgb, var(--accent-ink) 40%, transparent);border-top-color:var(--accent-ink);border-radius:50%;animation:sp .8s linear infinite}
+
+/* ---------- speaking mode ---------- */
+#view-dict.speak .w-only,#view-dict:not(.speak) .s-only{display:none!important}
+.modes{gap:12px;flex-wrap:wrap;margin-bottom:-4px}
+.seg.mode button{font-family:var(--f-body);font-size:15px;font-weight:600;display:inline-flex;align-items:center;gap:7px;padding:8px 16px}
+.seg.mode svg{width:16px;height:16px}
+.modes label{gap:6px}
+.say{grid-column:3;display:flex;align-items:center;gap:10px;min-width:0}
+.say .txt,.say .txt-h{flex:1;min-width:0;font-size:17px;line-height:1.45}
+.say .txt-h{color:var(--muted);font-size:15px;font-style:italic}
+.lines:not(.hidetext) .txt-h,.lines.hidetext .line:not(.done) .txt,.line.done .txt-h{display:none}
+.btn.mic{width:46px;height:46px;min-height:46px;padding:0;border-radius:50%;flex:none;background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.mic svg{width:20px;height:20px}
+.btn.mic.on{background:var(--err);border-color:var(--err);color:#fff;animation:ring 1.1s ease-out infinite}
+.btn.mic:disabled{opacity:.4;cursor:not-allowed}
+@keyframes ring{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--err) 55%,transparent)}100%{box-shadow:0 0 0 12px transparent}}
+.heard{grid-column:3;min-width:0;font-size:14px;color:var(--muted);font-style:italic}
+.heard.err{color:var(--err);font-style:normal}
+.line.listening{background:var(--err-soft)}
+.result .tries{font-family:var(--f-body);font-size:12px;color:var(--muted);margin-left:8px}
+.kpis.k4{grid-template-columns:repeat(4,1fr)}
+.rcard .mic.big{width:auto;height:auto;min-height:52px;border-radius:26px;padding:10px 22px;gap:8px;font-size:16px}
+.rcard .heard{margin-top:4px}
+body.phone #view-dict.speak .line{grid-template-columns:auto 1fr}
+body.phone #view-dict.speak .who{grid-column:1/-1}
+body.phone #view-dict.speak .ctrls{display:flex}
+body.phone #view-dict.speak .ctrls .slow{display:inline-flex}
+body.phone #view-dict.speak .say{grid-column:2}
+body.phone #view-dict.speak .result,body.phone #view-dict.speak .heard{grid-column:1/-1}
+body.phone #view-dict.speak .line.cur{background:var(--sunk)}
+body.phone #view-dict.speak .line.cur.listening,body.phone #view-dict.speak .line.listening{background:var(--err-soft)}
+@media (max-width:560px){.kpis.k4{grid-template-columns:repeat(2,1fr)} .seg.mode button{padding:8px 14px}}
+@media (prefers-reduced-motion: reduce){.btn.mic.on{animation:none}}

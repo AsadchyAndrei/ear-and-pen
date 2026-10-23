@@ -91,6 +91,13 @@
       </div>
     </div>
 
+    <div class="row modes">
+      <div class="seg mode" id="modeSeg" role="group" aria-label="Режим">
+        <button type="button" data-m="write" aria-pressed="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3-8 8H2.5v-3z"/></svg>Писать</button><button type="button" data-m="speak" aria-pressed="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="5.5" y="1.75" width="5" height="8" rx="2.5"/><path d="M3.25 7.5a4.75 4.75 0 0 0 9.5 0M8 12.25v2"/></svg>Говорить</button>
+      </div>
+      <label class="row note s-only"><input type="checkbox" id="sText" checked> показывать текст</label>
+    </div>
+
     <div class="row spread playrow">
       <button class="btn" id="dPlayAll" type="button" aria-pressed="false"></button>
       <div class="row">
@@ -101,15 +108,19 @@
       </div>
     </div>
 
-    <p class="note" id="dHelp">Слушайте строку и пишите, что услышали.<span class="keys"> <span class="kbd">Enter</span> — к следующей строке (она сразу прозвучит), <span class="kbd">Esc</span> — повторить текущую.</span></p>
+    <p class="note s-only" id="sHelp">Послушайте строку и повторите её вслух: нажмите <b>микрофон</b>, скажите фразу — слова, которые не распознались, подсветятся. Без текста сложнее: так тренируется и слух, и память.</p>
+    <p class="partial s-only" id="sNo" hidden>Этот браузер не умеет распознавать речь. Откройте сайт в Chrome, Edge или Safari.</p>
+
+    <p class="note w-only" id="dHelp">Слушайте строку и пишите, что услышали.<span class="keys"> <span class="kbd">Enter</span> — к следующей строке (она сразу прозвучит), <span class="kbd">Esc</span> — повторить текущую.</span></p>
 
     <div class="lines" id="lines"></div>
 
     <div class="row dacts">
-      <button class="btn primary" id="dCheck" type="button">Проверить</button>
-      <button class="btn" id="dPeek" type="button">Подсмотреть строку</button>
+      <button class="btn primary w-only" id="dCheck" type="button">Проверить</button>
+      <button class="btn primary s-only" id="sDone" type="button">Итог</button>
+      <button class="btn w-only" id="dPeek" type="button">Подсмотреть строку</button>
       <button class="btn ghost" id="dReset" type="button">Начать заново</button>
-      <label class="row note strict"><input type="checkbox" id="strict"> строго: регистр и пунктуация</label>
+      <label class="row note strict w-only"><input type="checkbox" id="strict"> строго: регистр и пунктуация</label>
     </div>
 
     <div class="partial" id="dPartial" role="alert" hidden>
@@ -181,7 +192,7 @@
       <div class="row spread" style="margin-bottom:10px">
         <h3>Мои ошибки</h3>
         <div class="row">
-          <select id="mFilter" aria-label="Какие ошибки показывать"><option value="all">Все</option><option value="tr">Перевод</option><option value="dict">Диктант</option></select>
+          <select id="mFilter" aria-label="Какие ошибки показывать"><option value="all">Все</option><option value="tr">Перевод</option><option value="dict">Диктант</option><option value="speak">Произношение</option></select>
           <button class="btn ghost" id="mClear" type="button">Очистить историю</button>
         </div>
       </div>
