@@ -2291,9 +2291,9 @@ $("#civIdk").onclick = () => civAnswer([], true);
 $("#civMic").onclick = async () => {
   if(listening){ stopListening(true); return; }
   const btn = $("#civMic");
-  setLabel(btn, CIV_MIC[1], CIV_MIC);
+  setLabel(btn, CIV_MIC[1], CIV_MIC); $("#civCard").classList.add("listening");
   const r = await hearLine(null, btn, $("#civOut"));
-  setLabel(btn, CIV_MIC[0], CIV_MIC);
+  setLabel(btn, CIV_MIC[0], CIV_MIC); $("#civCard").classList.remove("listening");
   if(r?.alts?.length) civAnswer(r.alts);
 };
 $("#civNext").onclick = () => {
@@ -2369,9 +2369,10 @@ function rdShow(){
 $("#rdMic").onclick = async () => {
   if(listening){ stopListening(true); return; }
   const t = rd.list[rd.i], btn = $("#rdMic"), out = $("#rdOut");
-  setLabel(btn, RD_MIC[1], RD_MIC);
+  const card = btn.closest(".civcard");
+  setLabel(btn, RD_MIC[1], RD_MIC); card.classList.add("listening");
   const r = await hearLine(t, btn, out);
-  setLabel(btn, RD_MIC[0], RD_MIC);
+  setLabel(btn, RD_MIC[0], RD_MIC); card.classList.remove("listening");
   if(!r) return;
   const ok = r.pct >= 85;
   if(ok) rd.pass = true;

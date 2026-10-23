@@ -614,3 +614,7 @@ body.has-sess{padding-bottom:110px}
 .civlist li.hit .civtr{color:var(--muted);font-weight:400}
 .civrubtn{align-self:flex-start;min-height:32px;padding:4px 10px;font-size:14px;margin:-4px 0 -2px}
 .civrubtn .stk{display:inline-grid}
+.btn.civmic.on,.btn.civmic.on:hover,#civMic.on,#rdMic.on,#civMic.on:hover,#rdMic.on:hover{background:var(--err);border-color:var(--err);color:#fff;animation:ring 1.1s ease-out infinite}
+.civcard{transition:background .2s}
+.civcard.listening{background:var(--err-soft)}
+@media (prefers-reduced-motion: reduce){#civMic.on,#rdMic.on{animation:none}}
