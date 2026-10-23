@@ -7,6 +7,7 @@
 //   history   results of every exercise     — union of both devices
 //   mistakes  saved mistakes                — union of both devices
 //   dialogs   dialogues written by Claude   — union of both devices
+//   rev       review schedule per card      — per card, the latest review wins (last)
 //   cleared   "clear history" time          — anything older is dropped everywhere
 
 export const SYNC_V = 1;
@@ -38,6 +39,13 @@ export function merge(a, b) {
   const dialogs = union(a.dialogs, b.dialogs, dlgKey)
     .sort((x, y) => (x.at || 0) - (y.at || 0))
     .slice(-40);
+  const rev = {};
+  for (const src of [a.rev, b.rev]) {
+    for (const [k, r] of Object.entries(src || {})) {
+      if (!r || typeof r !== "object" || (r.last || 0) <= cleared) continue;
+      if (!rev[k] || (r.last || 0) > (rev[k].last || 0)) rev[k] = r;
+    }
+  }
   return {
     v: SYNC_V,
     prefs: prefSrc.prefs || {},
@@ -47,6 +55,7 @@ export function merge(a, b) {
     history,
     mistakes,
     dialogs,
+    rev,
     cleared,
   };
 }

@@ -121,11 +121,12 @@ $("#setClose").onclick = $("#setDone").onclick = () => $("#setSheet").close();
 paintSet();
 
 /* ---------- tabs ---------- */
-const TABS = ["dict", "tr", "stats"];
+const TABS = ["dict", "tr", "rev", "stats"];
 document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => showView(b.dataset.view));
 $("nav.tabs").addEventListener("keydown", e => {
   const i = TABS.indexOf(state.view);
-  const to = e.key === "ArrowRight" ? TABS[(i + 1) % 3] : e.key === "ArrowLeft" ? TABS[(i + 2) % 3] : e.key === "Home" ? TABS[0] : e.key === "End" ? TABS[2] : null;
+  const L = TABS.length;
+  const to = e.key === "ArrowRight" ? TABS[(i + 1) % L] : e.key === "ArrowLeft" ? TABS[(i + L - 1) % L] : e.key === "Home" ? TABS[0] : e.key === "End" ? TABS[L - 1] : null;
   if(!to) return;
   e.preventDefault(); showView(to); $("#tab-" + to).focus();
 });
@@ -134,6 +135,7 @@ function showView(v){
   document.querySelectorAll("nav.tabs button").forEach(b => { const on = b.dataset.view === v; b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; });
   TABS.forEach(x => $("#view-"+x).hidden = x !== v);
   if(v === "stats") renderStats();
+  if(v === "rev"){ if(rpos >= rq.length) startRev(); else renderRev(); }
   if(v === "tr" && !isPhone()) setTimeout(() => $("#trIn").focus(), 0);
   stopSpeech();
   updateBar();
@@ -239,6 +241,7 @@ function setLoading(on){
     document.querySelectorAll(".line.loading").forEach(l => l.classList.remove("loading"));
     if(f) $(".line.cur")?.classList.add("loading");
     $("#mbar").classList.toggle("loading", f);
+    $("#rPlay")?.classList.toggle("loading", f);
   };
   if(on) loadT = setTimeout(() => apply(true), 150); else apply(false);
 }
@@ -721,7 +724,7 @@ function pushResult(kind, pct){
 function saveMistakes(list){
   if(!list.length) return;
   const t = Date.now();
-  const m = store.get("mistakes", []); list.forEach((x, i) => m.unshift({...x, t: t + i})); store.set("mistakes", m.slice(0, 300)); cloudDirty();
+  const m = store.get("mistakes", []); list.forEach((x, i) => m.unshift({...x, t: t + i})); store.set("mistakes", m.slice(0, 300)); cloudDirty(); paintBadge();
 }
 const TYPE_RU = {listening:"на слух", grammar:"грамматика", tense:"время", articles:"артикли", prepositions:"предлоги", "word order":"порядок слов", vocabulary:"слова", spelling:"орфография", punctuation:"пунктуация", style:"стиль", meaning:"смысл"};
 const plural = (n, one, few, many) => { const a = n % 10, b = n % 100; return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many; };
@@ -752,6 +755,7 @@ function renderStats(){
     return `<li class="mcard" data-i="${i}">
       <div class="pair"><del class="w" lang="en">${esc(x.yours)}</del><span aria-hidden="true">→</span><ins class="w" lang="en">${esc(x.better)}</ins>${x.type ? `<span class="chip">${esc(TYPE_RU[x.type] || x.type)}</span>` : ""}</div>
       ${why ? `<div class="why">${esc(why)}</div>` : ""}
+      ${whenOf(x) ? `<div class="when">${whenOf(x)}</div>` : ""}
       ${ctx ? `<div class="ctx"><span lang="en">${esc(ctx)}</span>${playBtn(ctx)}</div>` : x.ru ? `<div class="ctx"><span lang="ru">${esc(x.ru)}</span></div>` : ""}
       ${ctx ? `<div class="acts"><button class="btn" type="button" data-drill>Повторить на слух</button></div>` : x.ru ? `<div class="acts"><button class="btn" type="button" data-again>Перевести снова</button></div>` : ""}
     </li>`; }).join("")
@@ -785,7 +789,155 @@ $("#mList").addEventListener("click", e => {
 $("#mFilter").onchange = renderStats;
 $("#mClear").onclick = () => $("#mConfirm").hidden = false;
 $("#mNo").onclick = () => $("#mConfirm").hidden = true;
-$("#mYes").onclick = () => { store.set("history", []); store.set("mistakes", []); store.set("cleared", Date.now()); $("#mConfirm").hidden = true; renderStats(); cloudDirty(); };
+$("#mYes").onclick = () => { store.set("history", []); store.set("mistakes", []); store.set("rev", {}); store.set("cleared", Date.now()); rq = []; rpos = 0; paintBadge(); $("#mConfirm").hidden = true; renderStats(); cloudDirty(); };
+
+/* ---------- review: mistakes come back after 1, 3, 7, 14, 30, 60 days ---------- */
+const DAY = 864e5, STEPS = [1, 3, 7, 14, 30, 60];
+const normPhrase = t => String(t || "").toLowerCase().replace(/[’‘`´]/g, "'").replace(/[^\p{L}\p{N}' ]+/gu, " ").replace(/\s+/g, " ").trim();
+const idOf = x => x.kind === "dict" && ctxOf(x) ? "d:" + ctxOf(x) : x.kind === "tr" && x.ru ? "t:" + x.ru : "";
+// one card per sentence: several mistakes in the same sentence are practised together
+function reviewItems(){
+  const map = new Map();
+  for(const x of store.get("mistakes", [])){
+    const id = idOf(x); if(!id) continue;
+    const it = map.get(id) || (x.kind === "dict" ? {id, kind: "dict", text: ctxOf(x), frags: [], t: x.t} : {id, kind: "tr", ru: x.ru, en: x.en || "", frags: [], t: x.t});
+    if(x.better && !it.frags.some(f => f.better === x.better)) it.frags.push({yours: x.yours, better: x.better, why: whyOf(x)});
+    it.t = Math.min(it.t || x.t, x.t || it.t);
+    if(it.kind === "tr" && !it.en && x.en) it.en = x.en;
+    map.set(id, it);
+  }
+  return [...map.values()];
+}
+const revState = () => store.get("rev", {});
+// a new card comes back the next day; after that, its own schedule
+const dueOf = (it, rev = revState()) => rev[it.id]?.due ?? ((it.t || 0) + 20 * 3600e3);
+function dueItems(now = Date.now()){ const rev = revState(); return reviewItems().filter(it => dueOf(it, rev) <= now).sort((a, b) => dueOf(a, rev) - dueOf(b, rev)); }
+function grade(it, pass){
+  const rev = revState(), r = rev[it.id] || {step: 0};
+  const days = pass ? STEPS[Math.min(r.step || 0, STEPS.length - 1)] : 1;
+  rev[it.id] = {step: pass ? Math.min((r.step || 0) + 1, STEPS.length) : 0, due: Date.now() + days * DAY - 2 * 3600e3, last: Date.now()};
+  store.set("rev", rev); cloudDirty(); paintBadge();
+  return days;
+}
+const daysWord = n => `${n} ${plural(n, "день", "дня", "дней")}`;
+function dayTxt(ts){
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  const d = Math.floor((ts - start) / DAY);
+  if(d <= 0) return `сегодня в ${new Date(ts).toLocaleTimeString("ru-RU", {hour: "2-digit", minute: "2-digit"})}`;
+  if(d === 1) return "завтра";
+  return `через ${daysWord(d)} (${new Date(ts).toLocaleDateString("ru-RU", {day: "numeric", month: "long"})})`;
+}
+function whenOf(x){
+  const id = idOf(x); if(!id) return "";
+  const rev = revState(), r = rev[id], due = r?.due ?? ((x.t || 0) + 20 * 3600e3);
+  if((r?.step || 0) >= 4) return `Выучено · следующий повтор ${dayTxt(due)}`;
+  return due <= Date.now() ? "Ждёт повторения" : `Повтор ${dayTxt(due)}`;
+}
+function paintBadge(){
+  const n = dueItems().length, b = $("#revBadge");
+  b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n);
+  $("#tab-rev").setAttribute("aria-label", n ? `Повтор, ждут повторения: ${n}` : "Повтор");
+}
+// the sentence is spoken by the same voice as in its dialogue (that audio is usually saved already)
+function speakCtx(text, mul = 1){
+  let who = "A";
+  for(const d of dialogs){ const l = d.lines.find(l => l.text === text); if(l){ who = l.s; break; } }
+  stopSpeech(); return speak(text, who, mul);
+}
+
+let rq = [], rpos = 0, rdone = 0, rtotal = 0, rretry = new Set();
+function startRev(){
+  rq = dueItems(); rpos = 0; rdone = 0; rtotal = rq.length; rretry = new Set();
+  rq.filter(it => it.kind === "dict").slice(0, 6).forEach(it => {
+    let who = "A"; for(const d of dialogs){ const l = d.lines.find(l => l.text === it.text); if(l){ who = l.s; break; } }
+    const pick = pickFor(who); if(hdOn && pick.startsWith("g:")) hdBlob(it.text, pick.slice(2), nearestRate(state.rate)).catch(() => {});
+  });
+  renderRev();
+}
+function renderRev(){
+  if(rpos >= rq.length){ revEmpty(); return; }
+  const it = rq[rpos], card = $("#revCard");
+  $("#revSub").textContent = `Сегодня: ${rtotal} ${plural(rtotal, "карточка", "карточки", "карточек")}`;
+  $("#revPos").textContent = `${rpos + 1} / ${rq.length}`;
+  $("#revBar").hidden = false; $("#revFill").style.width = `${Math.round(rpos / rq.length * 100)}%`;
+  if(it.kind === "dict"){
+    card.innerHTML = `<div class="rcard">
+      <div class="kind"><span class="chip">на слух</span><span class="note">Прослушайте и напишите фразу целиком.</span></div>
+      <div class="listen"><button class="btn primary big" id="rPlay" type="button">${PLAY_I}Слушать</button><button class="btn big" id="rSlow" type="button">${TURTLE}Медленно</button></div>
+      <input type="text" id="rIn" aria-label="Что вы услышали" placeholder="Что вы услышали?" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" lang="en" enterkeyhint="done">
+      <div class="row" id="rActs"><button class="btn primary" id="rCheck" type="button">Проверить</button><button class="btn ghost" id="rSkip" type="button">Пропустить</button></div>
+      <div id="rRes"></div></div>`;
+    $("#rPlay").onclick = () => speakCtx(it.text);
+    $("#rSlow").onclick = () => speakCtx(it.text, 0.75);
+  } else {
+    card.innerHTML = `<div class="rcard">
+      <div class="kind"><span class="chip">перевод</span><span class="note">Переведите ещё раз.</span></div>
+      <div class="ru" lang="ru">${esc(it.ru)}</div>
+      ${it.frags.length ? `<div class="focus">В прошлый раз ошибка была здесь: ${it.frags.map(f => `<del class="w" lang="en">${esc(f.yours)}</del>`).join(", ")}</div>` : ""}
+      <textarea id="rIn" aria-label="Ваш перевод на английском" placeholder="Напишите перевод на английском…" spellcheck="false" autocapitalize="sentences" autocorrect="off" lang="en"></textarea>
+      <div class="row" id="rActs"><button class="btn primary" id="rCheck" type="button">Проверить</button><button class="btn ghost" id="rSkip" type="button">Пропустить</button></div>
+      <div id="rRes"></div></div>`;
+  }
+  $("#rCheck").onclick = () => checkRev(it);
+  $("#rSkip").onclick = () => { rpos++; renderRev(); };
+  $("#rIn").addEventListener("keydown", e => {
+    if(e.key !== "Enter" || (it.kind === "tr" && !(e.ctrlKey || e.metaKey))) return;
+    e.preventDefault(); $("#rNext") ? $("#rNext").click() : checkRev(it);
+  });
+  if(!isPhone()) $("#rIn").focus();
+}
+function checkRev(it){
+  const v = $("#rIn").value.trim(); if(!v){ $("#rIn").focus(); return; }
+  const before = revState()[it.id];
+  let pass, body;
+  if(it.kind === "dict"){
+    const d = diff(it.text, v, false);
+    pass = d.pct >= 90;
+    body = `<div class="diffline"><span class="sc ${scClass(d.pct)}">${d.pct}%</span> ${diffHTML(d.ops)}</div>`;
+  } else {
+    // the point is the corrected words: they must be there (other wording is fine)
+    const got = " " + normPhrase(v) + " ";
+    const hits = it.frags.map(f => ({f, ok: got.includes(" " + normPhrase(f.better) + " ")}));
+    pass = hits.length ? hits.every(h => h.ok) : diff(it.en, v, false).pct >= 80;
+    body = `${hits.length ? `<div>${hits.map(h => `<div>${h.ok ? "✓" : "✗"} <ins class="w" lang="en">${esc(h.f.better)}</ins>${h.f.why ? ` <span class="note">— ${esc(h.f.why)}</span>` : ""}</div>`).join("")}</div>` : ""}
+      ${it.en ? `<div class="ver natural"><span class="eyebrow">Эталон</span><div class="row"><span class="en" lang="en" style="flex:1;min-width:0">${esc(it.en)}</span>${playBtn(it.en)}</div></div>` : ""}`;
+  }
+  const days = grade(it, pass);
+  const retry = !pass && !rretry.has(it.id);
+  if(retry){ rretry.add(it.id); rq.push(it); }
+  rdone++;
+  $("#rActs").hidden = true; $("#rIn").readOnly = true;
+  const res = ok => `<div class="rres ${ok ? "pass" : "fail"}"><div class="head">${ok ? "Верно!" : "Пока не получилось"}</div>${body}
+    <div class="next">${ok ? `Следующий повтор — через ${daysWord(ok === true ? days : ok)}.` : retry ? "Повторим ещё раз в конце и завтра." : "Вернёмся к этой карточке завтра."}</div>
+    <div class="row"><button class="btn primary" id="rNext" type="button">${rpos + 1 < rq.length ? "Дальше →" : "Готово"}</button>${!ok && it.kind === "tr" ? `<button class="btn" id="rOk" type="button">Я ответил верно</button>` : ""}</div></div>`;
+  $("#rRes").innerHTML = res(pass);
+  const wire = () => {
+    $("#rNext").onclick = () => { rpos++; renderRev(); };
+    // other wording can be right too: the person decides
+    if($("#rOk")) $("#rOk").onclick = () => {
+      const rev = revState(); if(before) rev[it.id] = before; else delete rev[it.id]; store.set("rev", rev);
+      if(retry){ rq.pop(); rretry.delete(it.id); }
+      const d2 = grade(it, true);
+      $("#rRes").innerHTML = res(d2); $("#rRes .head").textContent = "Засчитано"; wire();
+    };
+    if(!isPhone()) $("#rNext").focus();
+  };
+  wire();
+  announce(pass ? "Верно" : "Пока не получилось");
+}
+function revEmpty(){
+  const items = reviewItems(), rev = revState();
+  const next = items.map(it => dueOf(it, rev)).filter(d => d > Date.now()).sort((a, b) => a - b)[0];
+  const learned = items.filter(it => (rev[it.id]?.step || 0) >= 4).length;
+  $("#revPos").textContent = "";
+  $("#revBar").hidden = !rtotal; if(rtotal) $("#revFill").style.width = "100%";
+  $("#revSub").textContent = items.length ? `Карточек: ${items.length} · выучено: ${learned}` : "";
+  $("#revCard").innerHTML = !items.length
+    ? `<div class="revdone"><p>Здесь будут ваши ошибки из диктанта и перевода. Они возвращаются через 1, 3, 7, 14, 30 и 60 дней — пока не запомнятся.</p><button class="btn primary" type="button" data-go="dict">К диктанту</button></div>`
+    : `<div class="revdone">${rtotal ? `<div class="big">Готово!</div><p>Повторено карточек: ${rdone}.</p>` : `<p><b>На сегодня всё повторено.</b></p>`}${next ? `<p class="note">Следующее повторение — ${dayTxt(next)}.</p>` : ""}<button class="btn" type="button" data-go="dict">К диктанту</button></div>`;
+}
+document.addEventListener("click", e => { const g = e.target.closest("[data-go]"); if(g) showView(g.dataset.go); });
+setInterval(paintBadge, 10 * 60e3);
 
 /* ---------- toast ---------- */
 let toastEl;
@@ -910,7 +1062,7 @@ function snapshot(){
     prefs, prefsTs: store.get("prefsTs", 0),
     tr: { queue: store.get("trQueue", null), idx: store.get("trIdx", 0) }, trTs: store.get("trTs", 0),
     history: store.get("history", []), mistakes: store.get("mistakes", []),
-    dialogs: store.get("genDialogs", []), cleared: store.get("cleared", 0),
+    dialogs: store.get("genDialogs", []), rev: store.get("rev", {}), cleared: store.get("cleared", 0),
   }, {});
 }
 function applySnapshot(x){
@@ -919,6 +1071,7 @@ function applySnapshot(x){
   store.set("prefsTs", x.prefsTs);
   store.set("history", x.history); store.set("mistakes", x.mistakes); store.set("cleared", x.cleared);
   store.set("genDialogs", x.dialogs);
+  store.set("rev", x.rev || {});
   if(x.tr && x.tr.queue && x.tr.queue.length){ store.set("trQueue", x.tr.queue); store.set("trIdx", x.tr.idx || 0); store.set("trTs", x.trTs); }
   // show the new values
   if(!same(before.prefs, x.prefs)){
@@ -939,6 +1092,8 @@ function applySnapshot(x){
     if($("#trResult").hidden) renderTr();
   }
   if(state.view === "stats") renderStats();
+  paintBadge();
+  if(state.view === "rev" && rpos >= rq.length) revEmpty();
 }
 
 let cloud = null, user = null, syncing = false, again = false, syncTimer = null, lastSync = 0, unwatch = null;
@@ -1008,7 +1163,7 @@ $("#emSignUp").onclick = () => { if(!$("#emailForm").reportValidity()) return; b
 $("#emReset").onclick = () => { const em = $("#emIn").value.trim(); if(!em){ acctMsg("Сначала введите почту."); return; } busy($("#emReset"), async () => { await cloud.resetPassword(em); acctMsg("", "Письмо для смены пароля отправлено."); }); };
 $("#signOut").onclick = async () => { await cloud.signOut(); acctMsg(); };
 $("#syncNow").onclick = () => syncNow();
-addEventListener("visibilitychange", () => { if(document.visibilityState === "visible") syncNow(); });
+addEventListener("visibilitychange", () => { if(document.visibilityState === "visible"){ syncNow(); paintBadge(); } });
 
 async function bootCloud(){
   if(!FIREBASE) { acctUI(); return; }
@@ -1037,6 +1192,7 @@ async function bootCloud(){
 if(!synth) showToast("Этот браузер не умеет озвучивать текст. Откройте страницу в Chrome или Safari.");
 renderDialog(); renderTr();
 paintAccess();
+paintBadge();
 if(!store.get("introSeen", false)) $("#intro").hidden = false;
 $("#introClose").onclick = () => { $("#intro").hidden = true; store.set("introSeen", true); };
 netState();

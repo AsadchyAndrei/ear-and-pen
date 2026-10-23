@@ -179,6 +179,32 @@ textarea#trIn{width:100%;min-height:96px;resize:vertical;font-size:17px;line-hei
 .ok-msg{color:var(--ok);font-size:14px}
 @media (pointer:coarse){.kbdhint,#dHelp .keys{display:none}}
 
+/* ---------- review ---------- */
+.badge{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;margin-left:6px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;vertical-align:1px}
+.revh{font-size:22px}
+.revbar{height:6px;border-radius:999px;background:var(--sunk);overflow:hidden}
+.revbar i{display:block;height:100%;width:0;background:var(--accent);border-radius:999px;transition:width .25s}
+.rcard{display:flex;flex-direction:column;gap:14px}
+.rcard .kind{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.rcard .listen{display:flex;gap:10px;align-items:center}
+.rcard .listen .btn{flex:1;max-width:200px;white-space:nowrap}
+.rcard .listen .btn.big{min-height:56px;padding:10px 20px;font-size:17px}
+.rcard .listen .btn.big svg{width:20px;height:20px}
+.rcard input,.rcard textarea{width:100%;font-size:18px;padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:8px;font-family:var(--f-body)}
+.rcard textarea{min-height:84px;resize:vertical;line-height:1.5}
+.rcard .focus{font-size:14px;color:var(--muted)}
+.rcard .focus ins.w{font-size:15px}
+.rres{display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-radius:var(--r);background:var(--sunk);border-left:4px solid var(--line)}
+.rres.pass{border-left-color:var(--ok)}
+.rres.fail{border-left-color:var(--err)}
+.rres .head{font-weight:700;font-size:17px}
+.rres.pass .head{color:var(--ok)} .rres.fail .head{color:var(--err)}
+.rres .diffline{font-family:var(--f-mono);font-size:14px;line-height:1.9}
+.rres .next{font-size:14px;color:var(--muted)}
+.revdone{display:flex;flex-direction:column;gap:10px;align-items:flex-start;padding:8px 0}
+.revdone .big{font-size:34px}
+.mcard .when{font-size:13px;color:var(--muted)}
+
 /* ---------- progress ---------- */
 .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .kpi{background:var(--sunk);border-radius:var(--r);padding:12px 14px;min-width:0}
@@ -246,7 +272,8 @@ body.has-mbar{padding-bottom:calc(88px + env(safe-area-inset-bottom, 0px))}
     margin:0 calc(-1 * max(16px, env(safe-area-inset-right, 0px))) 0 calc(-1 * max(16px, env(safe-area-inset-left, 0px)));
     padding:0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));gap:0}
   body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top, 0px);z-index:13;background:var(--bg)}
-  nav.tabs button{flex:1;padding:12px 6px}
+  nav.tabs button{flex:1;padding:12px 2px;font-size:14.5px}
+  .badge{margin-left:3px;min-width:18px;height:18px;font-size:11px;padding:0 5px}
   .desk{padding:16px 14px;gap:16px}
   .dhead h2{font-size:22px}
   .dnav{width:100%;flex-wrap:nowrap}
@@ -294,3 +321,5 @@ body.phone #view-dict:not(.checked) .line.cur input{font-size:18px;padding:13px 
 @media (min-width:561px) and (pointer:fine){#mbar{display:none!important} body.has-mbar{padding-bottom:48px}}
 @media (display-mode: standalone){body{padding-block-start:max(12px, env(safe-area-inset-top, 0px))}}
 @media (prefers-reduced-motion: reduce){.spin,.eq i,.acct .dot,.line.loading .play::after,#mbar.loading #mbReplay::before{animation-duration:3s} .line{transition:none}}
+.rcard #rPlay.loading svg{display:none}
+.rcard #rPlay.loading::before{content:"";width:16px;height:16px;border:2px solid color-mix(in srgb, var(--accent-ink) 40%, transparent);border-top-color:var(--accent-ink);border-radius:50%;animation:sp .8s linear infinite}
