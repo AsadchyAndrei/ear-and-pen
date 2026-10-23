@@ -10,6 +10,7 @@
 //   rev       review schedule per card      — per card, the latest review wins (last)
 //   days      days the daily goal was met   — union of both devices (for the streak)
 //   words     phrase cards from dialogues   — union of both devices (earliest "added" kept)
+//   gone      ids of deleted dialogues      — union; those dialogues are dropped everywhere
 //   cleared   "clear history" time          — anything older is dropped everywhere
 
 export const SYNC_V = 1;
@@ -38,9 +39,12 @@ export function merge(a, b) {
     .filter(m => (m.t || 0) > cleared)
     .sort((x, y) => y.t - x.t)
     .slice(0, 300);
+  const gone = [...new Set([...(a.gone || []), ...(b.gone || [])])].slice(-300);
+  const goneSet = new Set(gone);
   const dialogs = union(a.dialogs, b.dialogs, dlgKey)
+    .filter(d => !(d.id && goneSet.has(d.id)))
     .sort((x, y) => (x.at || 0) - (y.at || 0))
-    .slice(-40);
+    .slice(-60);
   const rev = {};
   for (const src of [a.rev, b.rev]) {
     for (const [k, r] of Object.entries(src || {})) {
@@ -74,6 +78,7 @@ export function merge(a, b) {
     rev,
     days,
     words,
+    gone,
     cleared,
   };
 }

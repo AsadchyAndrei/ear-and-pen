@@ -338,7 +338,7 @@ function diffHTML(ops){
 const scClass = p => p >= 90 ? "good" : p >= 65 ? "mid" : "bad";
 
 /* ---------- data: built-in dialogues ---------- */
-const lvlOf = d => d.level || "B1";
+const lvlOf = d => d.own ? "свой" : d.level || "B1";
 const BUILTIN = DIALOGS.map(d => ({ ...d, lines: d.lines.map(([s, text]) => ({ s, text })), vocab: (d.vocab || []).map(([en, ru]) => ({ en, ru })) }));
 let dialogs = [...BUILTIN, ...store.get("genDialogs", [])];
 // the last dialogue you opened; the first time, one that matches your topic and level
@@ -347,10 +347,11 @@ if(dIdx < 0) dIdx = dialogs.findIndex(d => d.topic === state.topic && lvlOf(d) =
 if(dIdx < 0) dIdx = Math.max(0, dialogs.findIndex(d => d.topic === state.topic));
 let dChecked = false, dRecorded = false;
 
-const topicShort = d => d.gen ? (topicById(d.topic)?.short || "от Claude") : (topicById(d.topic)?.short || "");
+const topicShort = d => d.own ? "Свой текст" : d.gen ? (topicById(d.topic)?.short || "от Claude") : (topicById(d.topic)?.short || "");
 function paintEyebrow(){
   const d = dialogs[dIdx];
-  $("#dLevel").innerHTML = `${esc(topicShort(d))} · <span class="lv">${esc(lvlOf(d))}</span>${d.gen ? " · от Claude" : ""} · ${dIdx+1}/${dialogs.length}`;
+  $("#dLevel").innerHTML = d.own ? `${esc(topicShort(d))} · ${dIdx+1}/${dialogs.length}` : `${esc(topicShort(d))} · <span class="lv">${esc(lvlOf(d))}</span>${d.gen ? " · от Claude" : ""} · ${dIdx+1}/${dialogs.length}`;
+  $("#dDel").hidden = !(d.own || d.gen);
   $("#dLevel").setAttribute("aria-label", `Выбрать диалог. Сейчас: ${topicShort(d)}, уровень ${lvlOf(d)}, ${dIdx+1} из ${dialogs.length}`);
   $("#dPrev").disabled = dIdx === 0; $("#dNext").disabled = dIdx === dialogs.length-1;
 }
@@ -395,15 +396,15 @@ function jumpTo(){
 let pkTopic = null, pkLevel = "all";
 function bestOf(id){ let b = null; if(!id) return b; for(const h of store.get("history", [])) if(h.k === "dict" && h.d === id) b = Math.max(b ?? 0, h.p); return b; }
 function renderPicker(){
-  const hasGen = dialogs.some(d => d.gen);
-  $("#pkTopic").innerHTML = `<option value="all">Все темы</option>` + TOPICS.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("") + (hasGen ? `<option value="gen">От Claude</option>` : "");
-  if(pkTopic === "gen" && !hasGen) pkTopic = "all";
+  const hasGen = dialogs.some(d => d.gen), hasOwn = dialogs.some(d => d.own);
+  $("#pkTopic").innerHTML = `<option value="all">Все темы</option>` + (hasOwn ? `<option value="own">Мои тексты</option>` : "") + TOPICS.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("") + (hasGen ? `<option value="gen">От Claude</option>` : "");
+  if((pkTopic === "gen" && !hasGen) || (pkTopic === "own" && !hasOwn)) pkTopic = "all";
   $("#pkTopic").value = pkTopic;
   document.querySelectorAll("#pkLevel button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.l === pkLevel)));
-  const items = dialogs.map((d, i) => ({ d, i })).filter(({ d }) => (pkTopic === "all" || (pkTopic === "gen" ? d.gen : d.topic === pkTopic && !d.gen)) && (pkLevel === "all" || lvlOf(d) === pkLevel));
+  const items = dialogs.map((d, i) => ({ d, i })).filter(({ d }) => (pkTopic === "all" || (pkTopic === "own" ? d.own : pkTopic === "gen" ? d.gen : d.topic === pkTopic && !d.gen && !d.own)) && (pkLevel === "all" || lvlOf(d) === pkLevel));
   let last = "";
   $("#dlgList").innerHTML = items.length ? items.map(({ d, i }) => {
-    const g = pkTopic === "all" ? (d.gen ? "От Claude" : topicById(d.topic)?.name || "") : "";
+    const g = pkTopic === "all" ? (d.own ? "Мои тексты" : d.gen ? "От Claude" : topicById(d.topic)?.name || "") : "";
     const head = g && g !== last ? `<li class="dlggroup">${esc(g)}</li>` : ""; last = g || last;
     const b = bestOf(d.id);
     return `${head}<li><button type="button" class="dlgitem${i === dIdx ? " on" : ""}" data-i="${i}" ${i === dIdx ? 'aria-current="true"' : ""}>
@@ -411,7 +412,7 @@ function renderPicker(){
       <span class="m"><span class="chip">${esc(lvlOf(d))}</span>${b != null ? `<span class="best ${scClass(b)}" title="Лучший результат">${b}%</span>` : ""}</span></button></li>`;
   }).join("") : `<li class="empty">Здесь пока нет диалогов этого уровня.</li>`;
 }
-$("#dLevel").onclick = () => { pkTopic = dialogs[dIdx].gen ? "gen" : (dialogs[dIdx].topic || "all"); pkLevel = "all"; renderPicker(); $("#dlgSheet").showModal(); $("#dlgList .on")?.scrollIntoView({block: "center"}); };
+$("#dLevel").onclick = () => { pkTopic = dialogs[dIdx].own ? "own" : dialogs[dIdx].gen ? "gen" : (dialogs[dIdx].topic || "all"); pkLevel = "all"; renderPicker(); $("#dlgSheet").showModal(); $("#dlgList .on")?.scrollIntoView({block: "center"}); };
 $("#dlgClose").onclick = () => $("#dlgSheet").close();
 $("#pkTopic").onchange = e => { pkTopic = e.target.value; renderPicker(); };
 $("#pkLevel").addEventListener("click", e => { const b = e.target.closest("[data-l]"); if(b){ pkLevel = b.dataset.l; renderPicker(); } });
@@ -594,12 +595,122 @@ $("#dGen").onclick = async () => {
     const d = { id: "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(), level: lvl, gen: true, topic: $("#topic").value, title: String(data.title || "New dialogue"), context_ru: String(data.context_ru || ""),
       speakers: data.speakers || {A:"A",B:"B"}, lines: data.lines.filter(l => l && l.text).map(l => ({s: l.s === "B" ? "B" : "A", text: String(l.text)})),
       vocab: Array.isArray(data.vocab) ? data.vocab.slice(0,8).map(v => ({en:String(v.en||""), ru:String(v.ru||"")})) : [] };
-    const gen = store.get("genDialogs", []); gen.push(d); store.set("genDialogs", gen.slice(-40)); cloudDirty();
+    const gen = store.get("genDialogs", []); gen.push(d); store.set("genDialogs", gen.slice(-60)); cloudDirty();
     dialogs = [...BUILTIN, ...store.get("genDialogs", [])]; dIdx = dialogs.length - 1; renderDialog();
     $(`.line[data-i="0"] input`)?.focus();
   }catch(e){
     showToast(e.code === "unavailable" ? NO_AI : errCopy(e));
   }finally{ btn.disabled = false; gl.textContent = "Новый диалог"; }
+};
+
+
+/* ---------- your own text: paste English, it becomes a dictation ---------- */
+const NO_SPLIT = new Set("mr mrs ms dr st jr sr vs etc e.g i.e u.s u.k no fig approx inc ltd co corp dept ave blvd rd mt ft lb oz jan feb mar apr jun jul aug sep sept oct nov dec mon tue wed thu fri sat sun".split(" "));
+// sentences, with abbreviations like Dr. and a.m. kept inside
+function sentences(text){
+  const out = []; let start = 0;
+  const re = /[.!?…]+["'”’)\]]*\s+(?=["'“‘(\[]?[A-Z0-9])/g; let m;
+  while((m = re.exec(text))){
+    const before = text.slice(start, m.index + 1).trim();
+    const last = (before.match(/([A-Za-z.]+)\.$/) || [])[1]?.toLowerCase();
+    if(last && (NO_SPLIT.has(last) || /^[a-z]$/i.test(last))) continue;
+    out.push(text.slice(start, m.index + m[0].length).trim()); start = m.index + m[0].length;
+  }
+  const rest = text.slice(start).trim(); if(rest) out.push(rest);
+  return out;
+}
+// long sentences are split at a comma or semicolon near the middle, so a line is easy to hold in memory
+const MAX_W = 20;
+function shorten(s){
+  const words = s.split(/\s+/);
+  if(words.length <= MAX_W) return [s];
+  const mid = s.length / 2; let best = -1;
+  const re = /[,;:—–]\s+/g; let m;
+  while((m = re.exec(s))){ const at = m.index + m[0].length; const left = s.slice(0, at).split(/\s+/).length; if(left < 4 || words.length - left < 4) continue; if(best < 0 || Math.abs(at - mid) < Math.abs(best - mid)) best = at; }
+  if(best < 0){
+    // no comma: a conjunction near the middle
+    const cj = /\s(?=(?:and|but|because|so|which|when|while|before|after|if|until|although)\s)/g;
+    while((m = cj.exec(s))){ const at = m.index + 1; const left = s.slice(0, at).split(/\s+/).length - 1; if(left < 5 || words.length - left < 5) continue; if(best < 0 || Math.abs(at - mid) < Math.abs(best - mid)) best = at; }
+  }
+  if(best < 0) return [s];
+  return [...shorten(s.slice(0, best).trim()), ...shorten(s.slice(best).trim())];
+}
+const OWN_LINES = 15, OWN_PARTS = 6;
+function parseOwn(raw){
+  const rows = String(raw).replace(/\r/g, "").split(/\n+/).map(l => l.replace(/^\s*(?:[-•*▪●]|\d+[.)])\s+/, "").replace(/\s+/g, " ").trim()).filter(l => /[A-Za-z]/.test(l));
+  const spRe = /^([A-Z][A-Za-z.'’ -]{0,24}):\s+(.+)$/;
+  const named = rows.filter(l => spRe.test(l)).length;
+  const units = [], names = [];
+  if(named >= 2 && named >= rows.length * 0.6){
+    for(const l of rows){
+      const m = l.match(spRe);
+      if(m){ let i = names.indexOf(m[1]); if(i < 0){ names.push(m[1]); i = names.length - 1; } units.push({s: i % 2 ? "B" : "A", text: m[2]}); }
+      else if(units.length) units[units.length - 1].text += " " + l;
+    }
+  } else {
+    // a line broken in the middle of a sentence (copied from a PDF) continues the previous one
+    for(const l of rows){
+      const prev = units[units.length - 1];
+      if(prev && !/[.!?:;,"”)…]$/.test(prev.text) && /^[a-z]/.test(l)) prev.text += " " + l;
+      else units.push({s: "A", text: l});
+    }
+  }
+  const lines = [];
+  for(const u of units){
+    // a very short sentence ("Almost.") goes together with the next one
+    const sn = sentences(u.text), merged = [];
+    for(let i = 0; i < sn.length; i++){
+      if(sn[i].split(/\s+/).length < 3 && i + 1 < sn.length){ sn[i + 1] = sn[i] + " " + sn[i + 1]; continue; }
+      merged.push(sn[i]);
+    }
+    for(const x of merged) for(const part of shorten(x)) lines.push({s: u.s, text: part});
+  }
+  const cyr = (raw.match(/[А-Яа-яЁё]/g) || []).length, lat = (raw.match(/[A-Za-z]/g) || []).length;
+  return {lines, names, mostlyRu: cyr > lat};
+}
+function ownInfo(){
+  const {lines, names, mostlyRu} = parseOwn($("#ownText").value);
+  const parts = Math.ceil(lines.length / OWN_LINES);
+  $("#ownMake").disabled = !lines.length || mostlyRu;
+  $("#ownInfo").classList.toggle("ownwarn", mostlyRu || parts > OWN_PARTS);
+  $("#ownInfo").textContent = mostlyRu ? "Похоже, текст на русском. Вставьте английский текст." : !lines.length ? ""
+    : `${lines.length} ${plural(lines.length, "фраза", "фразы", "фраз")}${names.length ? `, голоса: ${names.slice(0, 2).join(" и ")}${names.length > 2 ? " (и другие по очереди)" : ""}` : ""}${parts > 1 ? ` · будет ${Math.min(parts, OWN_PARTS)} ${plural(Math.min(parts, OWN_PARTS), "часть", "части", "частей")} по ${Math.ceil(Math.min(lines.length, OWN_PARTS * OWN_LINES) / Math.min(parts, OWN_PARTS))} строк` : ""}${parts > OWN_PARTS ? `. Длинный текст: войдут первые ${OWN_PARTS * OWN_LINES} фраз` : ""}.${canAI() ? "" : " Озвучка — голосом браузера; HD-голос для своих текстов — после входа."}`;
+}
+$("#ownBtn").onclick = () => { $("#ownText").value = ""; $("#ownName").value = ""; ownInfo(); $("#ownSheet").showModal(); $("#ownText").focus(); };
+$("#pkOwn").onclick = () => { $("#dlgSheet").close(); $("#ownBtn").click(); };
+$("#ownClose").onclick = $("#ownCancel").onclick = () => $("#ownSheet").close();
+$("#ownText").addEventListener("input", ownInfo);
+$("#ownMake").onclick = () => {
+  const {lines, names} = parseOwn($("#ownText").value);
+  if(!lines.length) return;
+  const words = lines.map(l => l.text).join(" ").split(/\s+/);
+  const base = $("#ownName").value.trim() || words.slice(0, 5).join(" ").replace(/[.,;:!?]+$/, "") + (words.length > 5 ? "…" : "");
+  // equal parts of up to OWN_LINES lines
+  const use = lines.slice(0, OWN_PARTS * OWN_LINES), n = Math.ceil(use.length / OWN_LINES), size = Math.ceil(use.length / n);
+  const parts = [];
+  for(let i = 0; i < use.length; i += size) parts.push(use.slice(i, i + size));
+  const t = Date.now(), made = parts.map((ls, k) => ({
+    id: "o" + t.toString(36) + k + Math.random().toString(36).slice(2, 5), at: t + k, own: true, topic: "own",
+    title: base + (parts.length > 1 ? ` · ${k + 1}/${parts.length}` : ""),
+    context_ru: `Ваш текст · ${ls.length} ${plural(ls.length, "фраза", "фразы", "фраз")}`,
+    speakers: {A: names[0] || "Диктор", B: names[1] || "B"}, lines: ls, vocab: []
+  }));
+  const gen = store.get("genDialogs", []); gen.push(...made); store.set("genDialogs", gen.slice(-60)); cloudDirty();
+  dialogs = [...BUILTIN, ...store.get("genDialogs", [])];
+  dIdx = dialogs.findIndex(d => d.id === made[0].id);
+  $("#ownSheet").close(); renderDialog();
+  showToast(made.length > 1 ? `Готово: ${made.length} ${plural(made.length, "часть", "части", "частей")}. Следующая — кнопкой →.` : "Готово — можно начинать.");
+};
+// delete your own text or a dialogue from Claude (on every device)
+$("#dDel").onclick = () => {
+  const d = dialogs[dIdx]; if(!(d.own || d.gen)) return;
+  showToast(`Удалить «${d.title}»?`, {label: "Удалить", fn: () => {
+    store.set("genDialogs", store.get("genDialogs", []).filter(x => x.id !== d.id));
+    if(d.id) store.set("gone", [...store.get("gone", []), d.id].slice(-300));
+    cloudDirty();
+    dialogs = [...BUILTIN, ...store.get("genDialogs", [])];
+    dIdx = Math.max(0, Math.min(dIdx - 1, dialogs.length - 1)); renderDialog();
+  }}, 7000);
 };
 
 /* ---------- translation ---------- */
@@ -1569,7 +1680,7 @@ function snapshot(){
     prefs, prefsTs: store.get("prefsTs", 0),
     tr: { queue: store.get("trQueue", null), idx: store.get("trIdx", 0) }, trTs: store.get("trTs", 0),
     history: store.get("history", []), mistakes: store.get("mistakes", []),
-    dialogs: store.get("genDialogs", []), rev: store.get("rev", {}), days: store.get("days", {}), words: store.get("words", {}), cleared: store.get("cleared", 0),
+    dialogs: store.get("genDialogs", []), rev: store.get("rev", {}), days: store.get("days", {}), words: store.get("words", {}), gone: store.get("gone", []), cleared: store.get("cleared", 0),
   }, {});
 }
 function applySnapshot(x){
@@ -1581,6 +1692,7 @@ function applySnapshot(x){
   store.set("rev", x.rev || {});
   store.set("days", x.days || {});
   store.set("words", x.words || {});
+  store.set("gone", x.gone || []);
   if(x.tr && x.tr.queue && x.tr.queue.length){ store.set("trQueue", x.tr.queue); store.set("trIdx", x.tr.idx || 0); store.set("trTs", x.trTs); }
   // show the new values
   if(!same(before.prefs, x.prefs)){

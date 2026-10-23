@@ -79,6 +79,7 @@
       <div class="dhead">
         <button class="eyebrow pick" id="dLevel" type="button" aria-haspopup="dialog"></button>
         <h2 id="dTitle"></h2>
+        <button class="btn ghost delbtn" id="dDel" type="button" hidden>Удалить</button>
         <p id="dContext"></p>
       </div>
       <div class="dnav">
@@ -96,6 +97,7 @@
         <button type="button" data-m="write" aria-pressed="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3-8 8H2.5v-3z"/></svg>Писать</button><button type="button" data-m="speak" aria-pressed="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="5.5" y="1.75" width="5" height="8" rx="2.5"/><path d="M3.25 7.5a4.75 4.75 0 0 0 9.5 0M8 12.25v2"/></svg>Говорить</button>
       </div>
       <label class="row note s-only"><input type="checkbox" id="sText" checked> показывать текст</label>
+      <button class="btn ghost ownbtn" id="ownBtn" type="button" aria-haspopup="dialog"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>Свой текст</button>
     </div>
 
     <div class="row spread playrow">
@@ -246,7 +248,21 @@
       <select id="pkTopic" aria-label="Тема"></select>
       <div class="seg" id="pkLevel" role="group" aria-label="Уровень"><button type="button" data-l="all">Все</button><button type="button" data-l="A2">A2</button><button type="button" data-l="B1">B1</button><button type="button" data-l="B2">B2</button><button type="button" data-l="C1">C1</button></div>
     </div>
+    <button class="btn pkown" id="pkOwn" type="button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>Вставить свой текст</button>
     <ul class="dlglist" id="dlgList"></ul>
+  </div>
+</dialog>
+
+<dialog class="sheet" id="ownSheet" aria-labelledby="ownTitle">
+  <div class="sheet-in">
+    <div class="row spread"><h2 id="ownTitle">Свой текст</h2><button class="btn ghost" id="ownClose" type="button" aria-label="Закрыть">✕</button></div>
+    <p class="note">Вставьте любой английский текст — письмо, памятку, статью, сцену из сериала. Он разобьётся на фразы, и получится диктант: можно писать или говорить. Если строки начинаются с имени и двоеточия (<span lang="en">Mike: Hi!</span>), будет два голоса.</p>
+    <label class="field"><span class="lbl">Текст на английском</span>
+      <textarea id="ownText" lang="en" spellcheck="false" placeholder="Paste your text here…"></textarea></label>
+    <label class="field"><span class="lbl">Название (необязательно)</span>
+      <input type="text" id="ownName" lang="en" autocomplete="off" placeholder="Например: Letter from the union"></label>
+    <p class="note" id="ownInfo" aria-live="polite"></p>
+    <div class="row"><button class="btn primary" id="ownMake" type="button" disabled>Сделать диктант</button><button class="btn" id="ownCancel" type="button">Отмена</button></div>
   </div>
 </dialog>
 
