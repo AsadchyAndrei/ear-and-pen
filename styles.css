@@ -354,11 +354,7 @@ body.phone .result,body.phone .reveal{grid-column:1}
 /* phone, writing: ▶ and 🐢 next to the speaker's name, the field under them */
 body.phone #view-dict:not(.speak) .line{grid-template-columns:1fr auto;align-items:center}
 body.phone #view-dict:not(.speak) .line > input{grid-column:1/-1}
-body.phone #view-dict:not(.speak):not(.checked) .ctrls{display:flex;gap:6px}
-body.phone #view-dict.speak:not(.checked) .ctrls{display:none}
-body.phone #view-dict.checked .ctrls .slow{display:none}
-body.phone #view-dict.checked .line{grid-template-columns:auto 1fr}
-body.phone #view-dict.checked .who{grid-column:1/-1}
+body.phone #view-dict:not(.speak) .ctrls{display:flex;gap:6px}
 body.phone #view-dict.checked .result,body.phone #view-dict.checked .reveal{grid-column:1/-1}
 body.phone .line:not(.cur) input{font-size:16px;padding:8px 11px}
 body.phone #view-dict:not(.checked) .line.cur{background:var(--sunk)}
@@ -613,3 +609,4 @@ body.has-sess{padding-bottom:110px}
 .civcard.listening{background:var(--err-soft)}
 @media (prefers-reduced-motion: reduce){#civMic.on,#rdMic.on{animation:none}}
 body.kb .sessbar,body.kb .toast{visibility:hidden}
+.skipped.hid{display:none}

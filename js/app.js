@@ -382,7 +382,7 @@ let dialogs = [...BUILTIN, ...store.get("genDialogs", [])];
 let dIdx = dialogs.findIndex(d => d.id && d.id === store.get("dId", ""));
 if(dIdx < 0) dIdx = dialogs.findIndex(d => d.topic === state.topic && lvlOf(d) === state.level);
 if(dIdx < 0) dIdx = Math.max(0, dialogs.findIndex(d => d.topic === state.topic));
-let dChecked = false, dRecorded = false;
+let dChecked = false, dRecorded = false, dRevealed = false;
 
 const topicShort = d => d.own ? "Свой текст" : d.gen ? (topicById(d.topic)?.short || "от Claude") : (topicById(d.topic)?.short || "");
 function paintEyebrow(){
@@ -394,7 +394,7 @@ function paintEyebrow(){
 }
 function renderDialog(){
   const d = dialogs[dIdx];
-  stopSpeech(); stopListening(); dChecked = false; dRecorded = false; sBest = []; sRecorded = false; mine = [];
+  stopSpeech(); stopListening(); dChecked = false; dRecorded = false; dRevealed = false; sBest = []; sRecorded = false; mine = [];
   $("#view-dict").classList.remove("checked");
   $("#dCheck").textContent = "Проверить";
   paintEyebrow();
@@ -542,7 +542,7 @@ function whyMiss(o){
 const bare = w => String(w || "").replace(/^[^\p{L}\p{N}']+|[^\p{L}\p{N}']+$/gu, "");
 let lastDict = null;
 function checkDictation(force){
-  stopSpeech();
+  stopSpeech(); hideToast();
   const d = dialogs[dIdx], strict = $("#strict").checked, n = d.lines.length, half = Math.ceil(n / 2);
   const rows = [...document.querySelectorAll(".line")];
   const typed = rows.map(r => r.querySelector("input").value);
@@ -555,12 +555,13 @@ function checkDictation(force){
     return;
   }
   $("#dPartial").hidden = true; $("#intro").hidden = true;
-  const results = [];
+  const results = [], counts = filled >= half;
   rows.forEach((row, i) => {
     row.querySelectorAll(".reveal,.result").forEach(x => x.remove());
     const el = document.createElement("div"); el.className = "result";
     if(!typed[i].trim()){
-      el.innerHTML = `<span class="sc skip">не заполнено</span><span class="skipped">${esc(d.lines[i].text)}</span>`;
+      // less than half done: the missing lines stay hidden, so you can still write them and get a real result
+      el.innerHTML = `<span class="sc skip">не заполнено</span>` + (counts || dRecorded ? `<span class="skipped">${esc(d.lines[i].text)}</span>` : `<span class="skipped hid">${esc(d.lines[i].text)}</span>`);
     } else {
       const r = diff(d.lines[i].text, typed[i], strict);
       results.push({expected: d.lines[i].text, typed: typed[i], pct: r.pct, ops: r.ops});
@@ -570,7 +571,7 @@ function checkDictation(force){
   });
   const avg = Math.round(results.reduce((k, r) => k + r.pct, 0) / results.length);
   const errCount = results.reduce((k, r) => k + r.ops.filter(o => o.t !== "eq").length, 0);
-  const skipped = n - results.length, counts = filled >= half;
+  const skipped = n - results.length;
   dChecked = true; lastDict = {d, results, avg};
   $("#view-dict").classList.add("checked");
   updateBar();
@@ -581,15 +582,16 @@ function checkDictation(force){
     saveMistakes(results.flatMap(r => r.ops.filter(o => o.t === "sub" || o.t === "miss")
       .map(o => ({kind: "dict", type: "listening", yours: o.t === "miss" ? "(пропуск)" : bare(o.w), better: bare(o.e), why: whyMiss(o), ctx: r.expected}))).slice(0, 12));
   }
-  const verdict = avg>=95?"Отлично — почти без ошибок.":avg>=80?"Хорошо. Посмотрите на выделенные слова.":avg>=60?"Неплохо, но часть потерялась на слух. Переслушайте строки на 0.7×.":"Сложно на этой скорости. Включите 0.7× и слушайте каждую строку по 2–3 раза.";
+  const verdict = !counts ? `Проверены ${results.length} из ${n} строк. Допишите остальные и нажмите «Проверить» ещё раз — тогда результат попадёт в статистику.` : avg>=95?"Отлично — почти без ошибок.":avg>=80?"Хорошо. Посмотрите на выделенные слова.":avg>=60?"Неплохо, но часть потерялась на слух. Переслушайте строки на 0.7×.":"Сложно на этой скорости. Включите 0.7× и слушайте каждую строку по 2–3 раза.";
   $("#dSummary").hidden = false;
   $("#dSummary").innerHTML = `<div class="summary">
       <div><div class="big">${avg}%</div><div class="note">точность${skipped ? `<br>по ${results.length} из ${n} строк` : ""}</div></div>
       <div style="flex:1;min-width:200px"><p style="margin:0">${verdict}</p>
-      <p class="note" style="margin-top:4px">${errCount ? `Ошибок и пропусков: ${errCount}. ` : "Ошибок нет. "}${skipped ? `Не заполнено строк: ${skipped}. ` : ""}${counts ? "" : "В статистику не записано — сделано меньше половины. "}<ins class="w">жёлтым</ins> — правильное слово, <del class="w">красным</del> — что вы написали, <ins class="w miss">пунктиром</ins> — пропущено.</p></div>
+      <p class="note" style="margin-top:4px">${errCount ? `Ошибок и пропусков: ${errCount}. ` : "Ошибок нет. "}${skipped ? `Не заполнено строк: ${skipped}. ` : ""}${dRevealed ? "В статистику не записано — пропущенные строки были открыты. " : counts || dRecorded ? "" : `<button class="linkbtn" type="button" id="dShowSkipped">Показать пропущенные строки</button> (тогда этот диалог не попадёт в статистику). `}<ins class="w">жёлтым</ins> — правильное слово, <del class="w">красным</del> — что вы написали, <ins class="w miss">пунктиром</ins> — пропущено.</p></div>
       ${errCount ? paidBtn("dExplainBtn", "Разобрать ошибки с Claude") : ""}
     </div>`;
   $("#dExplainBtn") && ($("#dExplainBtn").onclick = explainDictation);
+  $("#dShowSkipped") && ($("#dShowSkipped").onclick = () => { dRecorded = true; dRevealed = true; document.querySelectorAll(".skipped.hid").forEach(x => x.classList.remove("hid")); $("#dShowSkipped").parentNode.removeChild($("#dShowSkipped").nextSibling); $("#dShowSkipped").remove(); });
   paintAccess();
   if(d.vocab?.length){
     $("#dVocabWrap").hidden = false;
@@ -1412,7 +1414,7 @@ function whySay(o){
   return "Распозналось как другое слово — послушайте, как его произносит диктор.";
 }
 function finishSpeak(){
-  stopListening();
+  stopListening(); hideToast();
   const d = dialogs[dIdx], n = d.lines.length, half = Math.ceil(n / 2);
   const done = sBest.map((r, i) => r && {...r, i}).filter(Boolean);
   if(!done.length){ showToast("Сначала скажите хотя бы одну строку: нажмите на микрофон."); return; }
@@ -1424,12 +1426,12 @@ function finishSpeak(){
     pushResult("speak", avg, {d: d.id || ""});
     saveMistakes(misses.map(({o, ctx}) => ({kind: "speak", type: "pronunciation", yours: o.t === "miss" ? "(не распознано)" : bare(o.w), better: bare(o.e), why: whySay(o), ctx})).slice(0, 12));
   }
-  const verdict = avg >= 95 ? "Отлично — почти всё распознано." : avg >= 80 ? "Хорошо. Повторите строки с подсвеченными словами." : avg >= 60 ? "Неплохо. Послушайте строки на 0.7× и повторите медленнее, чётко проговаривая окончания." : "Пока сложно. Слушайте строку, повторяйте по половинке, потом целиком.";
+  const verdict = !counts ? `Сказано ${done.length} из ${n} строк. Скажите остальные и нажмите «Итог» ещё раз — тогда результат попадёт в статистику.` : avg >= 95 ? "Отлично — почти всё распознано." : avg >= 80 ? "Хорошо. Повторите строки с подсвеченными словами." : avg >= 60 ? "Неплохо. Послушайте строки на 0.7× и повторите медленнее, чётко проговаривая окончания." : "Пока сложно. Слушайте строку, повторяйте по половинке, потом целиком.";
   $("#dSummary").hidden = false;
   $("#dSummary").innerHTML = `<div class="summary">
       <div><div class="big">${avg}%</div><div class="note">распознано${done.length < n ? `<br>по ${done.length} из ${n} строк` : ""}</div></div>
       <div style="flex:1;min-width:200px"><p style="margin:0">${verdict}</p>
-      <p class="note" style="margin-top:4px">${misses.length ? `Не распознано слов: ${misses.length}. ` : ""}${counts ? (misses.length ? "Они вернутся в «Повтор». " : "") : "В статистику не записано — сказано меньше половины строк. "}Распознавание — не экзаменатор: имена и редкие слова оно может не узнать. Смотрите на слова, которые не получаются несколько раз.</p></div>
+      <p class="note" style="margin-top:4px">${misses.length ? `Не распознано слов: ${misses.length}. ` : ""}${counts && misses.length ? "Они вернутся в «Повтор». " : ""}Распознавание — не экзаменатор: имена и редкие слова оно может не узнать. Смотрите на слова, которые не получаются несколько раз.</p></div>
     </div>`;
   if(d.vocab?.length){
     $("#dVocabWrap").hidden = false;
@@ -2434,6 +2436,7 @@ civInit = true; civRefresh();
 
 /* ---------- toast ---------- */
 let toastEl;
+const hideToast = () => { if(toastEl){ clearTimeout(toastEl._t); toastEl.hidden = true; } };
 function showToast(msg, action, ms = 4500){
   if(!toastEl){ toastEl = document.createElement("div"); toastEl.className = "toast"; toastEl.setAttribute("role","status"); document.body.append(toastEl); }
   toastEl.textContent = msg;
