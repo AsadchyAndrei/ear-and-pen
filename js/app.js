@@ -2463,8 +2463,11 @@ $("#mbNext").onclick = () => {
 };
 if(window.visualViewport){
   const place = () => {
-    const vv = visualViewport, kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-    $("#mbar").style.transform = kb > 40 ? `translateY(${-kb}px)` : "";
+    const vv = visualViewport, kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    const open = kb > 80;
+    // with the keyboard open the bar sits right on top of it: no home-indicator gap under the buttons
+    document.body.classList.toggle("kb", open);
+    $("#mbar").style.transform = open ? `translateY(${-kb}px)` : "";
   };
   visualViewport.addEventListener("resize", place);
   visualViewport.addEventListener("scroll", place);

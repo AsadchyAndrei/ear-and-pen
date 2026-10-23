@@ -618,3 +618,5 @@ body.has-sess{padding-bottom:110px}
 .civcard{transition:background .2s}
 .civcard.listening{background:var(--err-soft)}
 @media (prefers-reduced-motion: reduce){#civMic.on,#rdMic.on{animation:none}}
+body.kb #mbar{padding-bottom:8px;box-shadow:none}
+body.kb .sessbar,body.kb .toast{visibility:hidden}
