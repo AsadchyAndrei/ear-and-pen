@@ -29,3 +29,6 @@ binding = "AUDIO"
 # daily practice reminders: checked every 15 minutes
 [triggers]
 crons = ["*/15 * * * *"]
+
+[observability]
+enabled = true

@@ -245,7 +245,8 @@ export default {
     }
     if (request.method === "POST" && url.pathname === "/stt") {
       if (!ok || !origin) return json({ error: "origin_not_allowed" }, 403, headers);
-      return stt(request, url, env, headers, request.headers.get("CF-Connecting-IP") || "?");
+      try { return await stt(request, url, env, headers, request.headers.get("CF-Connecting-IP") || "?"); }
+      catch (e) { console.log("stt crashed", String(e && e.stack || e)); return json({ error: "stt_crashed", detail: String(e && e.message || e).slice(0, 300) }, 500, headers); }
     }
     if (request.method === "GET") return json({ ok: true, service: "ear-and-pen", voice: !!env.GOOGLE_TTS_KEY, kept: !!env.AUDIO, access: !!env.ALLOWED_EMAILS }, 200, headers);
     if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405, headers);
