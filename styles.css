@@ -437,3 +437,4 @@ body.phone .ownbtn{display:none}
 body.phone #view-dict.speak .mine{grid-column:1/-1}
 .toast.upd{z-index:31}
 #sWho{color:var(--fg)}
+.micsel select{max-width:220px;padding:4px 8px;font-size:14px}

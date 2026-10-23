@@ -618,8 +618,36 @@ function audioCtx(){
   try{ actx ||= new (window.AudioContext || window.webkitAudioContext)(); if(actx.state !== "running") actx.resume().catch(() => {}); }catch{ actx = null; }
   return actx;
 }
+// which microphone: the one chosen in the list (computers often have several), else the system default
+async function micStream(){
+  const base = {echoCancellation: true, noiseSuppression: true}, id = store.get("micId", "");
+  if(id){ try{ return await navigator.mediaDevices.getUserMedia({audio: {...base, deviceId: {exact: id}}}); }catch(e){ if(e?.name !== "OverconstrainedError" && e?.name !== "NotFoundError") throw e; store.set("micId", ""); } }
+  return navigator.mediaDevices.getUserMedia({audio: base});
+}
+async function paintMics(){
+  try{
+    const list = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audioinput" && d.deviceId && d.deviceId !== "communications");
+    const wrap = $("#micWrap"), sel = $("#micSel");
+    wrap.hidden = list.length < 2;
+    if(list.length < 2) return;
+    const cur = store.get("micId", "");
+    sel.innerHTML = list.map((d, i) => `<option value="${esc(d.deviceId)}">${esc(d.label || `Микрофон ${i + 1}`)}</option>`).join("");
+    sel.value = list.some(d => d.deviceId === cur) ? cur : (list.find(d => d.deviceId === "default") || list[0]).deviceId;
+  }catch{}
+}
+$("#micSel").onchange = e => store.set("micId", e.target.value === "default" ? "" : e.target.value);
+navigator.mediaDevices?.addEventListener?.("devicechange", paintMics);
+// where to look when the microphone gives silence
+function micHelp(){
+  const ua = navigator.userAgent, mac = /Macintosh/.test(ua) && !(navigator.maxTouchPoints > 1), win = /Windows/.test(ua);
+  const many = !$("#micWrap").hidden ? " Если микрофонов несколько — выберите другой в списке «микрофон» выше." : "";
+  if(isIOS()) return "Проверьте, что сайту разрешён микрофон: Настройки → Приложения → Safari → Микрофон." + many;
+  const browser = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : "браузер";
+  return `Микрофон присылает тишину — скорее всего, ${browser} слушает не тот микрофон или он выключен.${many} Проверьте значок микрофона в адресной строке${mac ? `, а в macOS — Системные настройки → Конфиденциальность и безопасность → Микрофон → ${browser} и уровень входа в Настройках звука` : win ? ", а в Windows — Параметры → Конфиденциальность → Микрофон и устройство ввода в Параметрах звука" : ""}.`;
+}
 async function startRec(){
-  const stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}});
+  const stream = await micStream();
+  paintMics();
   const type = REC_TYPES.find(t => MediaRecorder.isTypeSupported?.(t)) || "";
   const mr = new MediaRecorder(stream, type ? {mimeType: type} : undefined), chunks = [];
   // raw sound straight from the microphone, next to the recording: sent for recognition and used to tell silence,
@@ -676,7 +704,8 @@ async function recordOnly(i, btn, out){
   btn.classList.remove("on", "rec-on"); btn.setAttribute("aria-pressed", "false"); row?.classList.remove("listening");
   const quiet = silent(blob);
   out.classList.toggle("err", quiet);
-  out.textContent = quiet ? `Похоже, запись беззвучная (${recInfo(blob)}). Послушайте «Я»; если тишина — проверьте, что сайту разрешён микрофон: Настройки → Приложения → Safari → Микрофон.` : "";
+  if(quiet) await paintMics();
+  out.textContent = quiet ? `Похоже, запись беззвучная (${recInfo(blob)}). Послушайте «Я». ${micHelp()}` : "";
   if(blob && i >= 0){ setMine(i, blob); paintMine(i); playMine(i, "both"); }
   return blob;
 }
@@ -974,7 +1003,7 @@ async function hearServer(expected, btn, out){
   const blob = await new Promise(res => { listening = { stop(){ listening = null; rec.stop().then(res); }, abort(){ listening = null; aborted = true; rec.stop().then(res); } }; });
   btn.classList.remove("on"); btn.setAttribute("aria-pressed", "false"); row?.classList.remove("listening");
   if(aborted) { out.textContent = ""; return null; }
-  if(silent(blob)){ out.classList.add("err"); out.textContent = `Запись беззвучная (${recInfo(blob)}). Проверьте, что сайту разрешён микрофон: Настройки → Приложения → Safari → Микрофон.`; return null; }
+  if(silent(blob)){ out.classList.add("err"); await paintMics(); out.textContent = `Запись беззвучная (${recInfo(blob)}). ${micHelp()}`; return null; }
   out.textContent = "Распознаю…";
   let alts;
   try{
@@ -1122,6 +1151,7 @@ function setMode(m){
   document.querySelectorAll("#modeSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.m === m)));
   $("#sNo").hidden = !!SR || serverSTT();
   paintWho();
+  if(m === "speak") paintMics();
   if(!SR && !CAN_REC) $("#sNo").textContent = "Этот браузер не умеет ни распознавать речь, ни записывать звук. Откройте сайт в Chrome, Edge или Safari.";
   renderDialog(); updateBar();
 }
