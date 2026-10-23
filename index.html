@@ -63,7 +63,7 @@
 
     <div class="dtop">
       <div class="dhead">
-        <div class="eyebrow" id="dLevel"></div>
+        <button class="eyebrow pick" id="dLevel" type="button" aria-haspopup="dialog"></button>
         <h2 id="dTitle"></h2>
         <p id="dContext"></p>
       </div>
@@ -208,6 +208,17 @@
   </div>
 </dialog>
 
+<dialog class="sheet tall" id="dlgSheet" aria-labelledby="dlgTitle">
+  <div class="sheet-in">
+    <div class="row spread"><h2 id="dlgTitle">Все диалоги</h2><button class="btn ghost" id="dlgClose" type="button" aria-label="Закрыть">✕</button></div>
+    <div class="row pkfilters">
+      <select id="pkTopic" aria-label="Тема"></select>
+      <div class="seg" id="pkLevel" role="group" aria-label="Уровень"><button type="button" data-l="all">Все</button><button type="button" data-l="A2">A2</button><button type="button" data-l="B1">B1</button><button type="button" data-l="B2">B2</button></div>
+    </div>
+    <ul class="dlglist" id="dlgList"></ul>
+  </div>
+</dialog>
+
 <dialog class="sheet" id="setSheet" aria-labelledby="setTitle">
   <div class="sheet-in">
     <div class="row spread"><h2 id="setTitle">Уровень и тема</h2><button class="btn ghost" id="setClose" type="button" aria-label="Закрыть">✕</button></div>
@@ -220,16 +231,7 @@
         <option value="C1">C1 · продвинутый</option>
       </select></label>
     <label class="field"><span class="lbl">Тема</span>
-      <select id="topic">
-        <option>Повседневные ситуации</option>
-        <option>Работа: HVAC и стройка</option>
-        <option>Собеседование и карьера</option>
-        <option>Магазины и сервисы</option>
-        <option>Школа и дети</option>
-        <option>Путешествия</option>
-        <option>Врач и здоровье</option>
-        <option value="__custom">Своя тема…</option>
-      </select></label>
+      <select id="topic"></select></label>
     <label class="field" id="customWrap" hidden><span class="lbl">Своя тема</span>
       <input type="text" id="topicCustom" placeholder="например, аренда квартиры"></label>
     <button class="btn primary" id="setDone" type="button">Готово</button>

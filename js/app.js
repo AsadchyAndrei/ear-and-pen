@@ -1,5 +1,6 @@
 // Ear & Pen — the whole app: dictation, translation, progress, voice, phone layout, install, sync.
 import { PROMPTS, JSON_TASKS } from "../prompts.js";
+import { TOPICS, topicById, DIALOGS, SENTENCES } from "../content.js";
 import { API_URL, FIREBASE } from "../config.js";
 import { merge, same } from "./merge.js";
 {
@@ -102,19 +103,23 @@ const state = {
   rate: store.get("rate",0.85), voiceA: store.get("voiceA",""), voiceB: store.get("voiceB",""), view: "dict"
 };
 $("#level").value = state.level;
-$("#topic").value = [...$("#topic").options].some(o=>o.value===state.topic) ? state.topic : "Повседневные ситуации";
+// topics are ids from content.js; settings saved by the first version kept the Russian name
+const OLD_TOPICS = {"Повседневные ситуации":"daily","Работа: HVAC и стройка":"hvac","Собеседование и карьера":"career","Магазины и сервисы":"shop","Школа и дети":"school","Путешествия":"travel","Врач и здоровье":"doctor"};
+const normTopic = v => OLD_TOPICS[v] || (topicById(v) || v === "__custom" ? v : "daily");
+$("#topic").innerHTML = TOPICS.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("") + `<option value="__custom">Своя тема…</option>`;
+state.topic = normTopic(state.topic); $("#topic").value = state.topic;
 $("#topicCustom").value = state.custom;
 $("#customWrap").hidden = $("#topic").value !== "__custom";
-const topicText = () => $("#topic").value === "__custom" ? ($("#topicCustom").value.trim() || "everyday life") : $("#topic").value;
+const topicText = () => $("#topic").value === "__custom" ? ($("#topicCustom").value.trim() || "everyday life") : (topicById($("#topic").value)?.prompt || "everyday life");
 function setPref(k, v){ state[k] = v; store.set(k, v); store.set("prefsTs", Date.now()); cloudDirty(); }
 const shortTopic = () => {
-  if($("#topic").value !== "__custom") return $("#topic").value.split(/[ :]/)[0];
+  if($("#topic").value !== "__custom") return topicById($("#topic").value)?.short || "";
   const t = $("#topicCustom").value.trim() || "своя тема";
   return t.length > 18 ? t.slice(0, 17) + "…" : t;
 };
 function paintSet(){ document.querySelectorAll(".setlbl").forEach(el => { el.innerHTML = `<span>${esc(state.level)}</span><span class="sl-tp"> · ${esc(shortTopic())}</span>`; }); }
-$("#level").onchange = e => { setPref("level", e.target.value); paintSet(); jumpToLevel(); };
-$("#topic").onchange = e => { setPref("topic", e.target.value); $("#customWrap").hidden = state.topic !== "__custom"; if(!$("#customWrap").hidden) $("#topicCustom").focus(); paintSet(); };
+$("#level").onchange = e => { setPref("level", e.target.value); paintSet(); jumpTo(); newBankQueue(); };
+$("#topic").onchange = e => { setPref("topic", e.target.value); $("#customWrap").hidden = state.topic !== "__custom"; if(!$("#customWrap").hidden) $("#topicCustom").focus(); paintSet(); jumpTo(); newBankQueue(); };
 $("#topicCustom").oninput = e => { setPref("custom", e.target.value); paintSet(); };
 document.addEventListener("click", e => { if(e.target.closest("[data-set]")) $("#setSheet").showModal(); });
 $("#setClose").onclick = $("#setDone").onclick = () => $("#setSheet").close();
@@ -331,48 +336,20 @@ function diffHTML(ops){
 const scClass = p => p >= 90 ? "good" : p >= 65 ? "mid" : "bad";
 
 /* ---------- data: built-in dialogues ---------- */
-const BUILTIN = [
-  { level:"A2", title:"Ordering at a café", context_ru:"Вы заказываете кофе и выпечку в кафе.", speakers:{A:"Barista", B:"Customer"},
-    lines:[
-      {s:"A", text:"Hi there! What can I get for you today?"},
-      {s:"B", text:"Can I get a medium latte with oat milk, please?"},
-      {s:"A", text:"Sure. Would you like anything to eat with that?"},
-      {s:"B", text:"Maybe a blueberry muffin. Are they fresh?"},
-      {s:"A", text:"They came out of the oven about twenty minutes ago."},
-      {s:"B", text:"Perfect, I'll take one. Can I pay with my phone?"},
-      {s:"A", text:"Of course. Just tap it on the reader when you're ready."}],
-    vocab:[{en:"What can I get for you?",ru:"Что вам предложить?"},{en:"oat milk",ru:"овсяное молоко"},{en:"came out of the oven",ru:"только из духовки"},{en:"tap it on the reader",ru:"приложите к терминалу"}] },
-  { level:"B1", title:"A service call", context_ru:"Техник приехал к хозяину дома, у которого плохо работает кондиционер.", speakers:{A:"Technician", B:"Homeowner"},
-    lines:[
-      {s:"B", text:"Thanks for coming out so quickly. The upstairs bedrooms just won't cool down."},
-      {s:"A", text:"No problem. When did you first notice the issue?"},
-      {s:"B", text:"About three days ago. The fan is running, but the air coming out feels warm."},
-      {s:"A", text:"Have you changed the air filter recently?"},
-      {s:"B", text:"Honestly, I can't remember the last time I did."},
-      {s:"A", text:"Let's start there. A clogged filter can restrict airflow and cause the coil to freeze."},
-      {s:"B", text:"Is that something I could have fixed myself?"},
-      {s:"A", text:"The filter, yes. But I'd still like to check the refrigerant pressure while I'm here."}],
-    vocab:[{en:"won't cool down",ru:"никак не охлаждаются"},{en:"clogged filter",ru:"забитый фильтр"},{en:"restrict airflow",ru:"ограничивать поток воздуха"},{en:"could have fixed",ru:"мог бы починить (в прошлом)"},{en:"while I'm here",ru:"раз уж я здесь"}] },
-  { level:"B2", title:"An apprenticeship interview", context_ru:"Собеседование на программу ученичества (apprenticeship).", speakers:{A:"Interviewer", B:"Candidate"},
-    lines:[
-      {s:"A", text:"So, tell me why you're interested in this apprenticeship program."},
-      {s:"B", text:"I've been working as an install helper, and I'd like to build a long-term career in the trade."},
-      {s:"A", text:"What would you say is the most valuable thing you've learned on the job?"},
-      {s:"B", text:"Probably that a clean, well-planned install saves a lot of trouble down the road."},
-      {s:"A", text:"How do you handle it when a senior installer asks you to do something you think is wrong?"},
-      {s:"B", text:"I'd ask about it respectfully. Sometimes there's a reason I hadn't considered."},
-      {s:"A", text:"That's a good answer. Do you have any questions for us?"},
-      {s:"B", text:"Yes. How is the time split between classroom training and work in the field?"}],
-    vocab:[{en:"the trade",ru:"ремесло, профессия"},{en:"down the road",ru:"в будущем, потом"},{en:"hadn't considered",ru:"не учёл"},{en:"in the field",ru:"на объектах, «в поле»"}] }
-];
-let dialogs = [...BUILTIN, ...store.get("genDialogs", [])];
-let dIdx = Math.min(store.get("dIdx", 0), dialogs.length-1);
-let dChecked = false, dRecorded = false;
 const lvlOf = d => d.level || "B1";
+const BUILTIN = DIALOGS.map(d => ({ ...d, lines: d.lines.map(([s, text]) => ({ s, text })), vocab: (d.vocab || []).map(([en, ru]) => ({ en, ru })) }));
+let dialogs = [...BUILTIN, ...store.get("genDialogs", [])];
+// the last dialogue you opened; the first time, one that matches your topic and level
+let dIdx = dialogs.findIndex(d => d.id && d.id === store.get("dId", ""));
+if(dIdx < 0) dIdx = dialogs.findIndex(d => d.topic === state.topic && lvlOf(d) === state.level);
+if(dIdx < 0) dIdx = Math.max(0, dialogs.findIndex(d => d.topic === state.topic));
+let dChecked = false, dRecorded = false;
 
+const topicShort = d => d.gen ? (topicById(d.topic)?.short || "от Claude") : (topicById(d.topic)?.short || "");
 function paintEyebrow(){
   const d = dialogs[dIdx];
-  $("#dLevel").innerHTML = `Диалог ${dIdx+1} из ${dialogs.length} · <span class="lv">${esc(lvlOf(d))}</span>${d.gen ? " · от Claude" : ""}`;
+  $("#dLevel").innerHTML = `${esc(topicShort(d))} · <span class="lv">${esc(lvlOf(d))}</span>${d.gen ? " · от Claude" : ""} · ${dIdx+1}/${dialogs.length}`;
+  $("#dLevel").setAttribute("aria-label", `Выбрать диалог. Сейчас: ${topicShort(d)}, уровень ${lvlOf(d)}, ${dIdx+1} из ${dialogs.length}`);
   $("#dPrev").disabled = dIdx === 0; $("#dNext").disabled = dIdx === dialogs.length-1;
 }
 function renderDialog(){
@@ -393,18 +370,47 @@ function renderDialog(){
       <input type="text" id="dl-${dIdx}-${i}" aria-label="Строка ${i+1}, ${esc(who)}: что вы услышали" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" lang="en" enterkeyhint="${i === d.lines.length - 1 ? "done" : "next"}" placeholder="Строка ${i+1}…">
     </div>`; }).join("");
   $("#dSummary").hidden = $("#dExplainWrap").hidden = $("#dVocabWrap").hidden = $("#dPartial").hidden = true;
-  store.set("dIdx", dIdx);
+  store.set("dId", d.id || "");
   setCur(0);
   updateBar();
 }
-// a new level in the sheet takes you to a dialogue of that level (unless you are mid-way through this one)
-function jumpToLevel(){
-  if(lvlOf(dialogs[dIdx]) === state.level) return;
+// a new topic or level in the sheet opens a matching dialogue (unless you are mid-way through this one)
+function jumpTo(){
+  const cur = dialogs[dIdx], t = $("#topic").value;
+  if(cur.topic === t && lvlOf(cur) === state.level) return;
   const typed = [...document.querySelectorAll(".line input")].some(i => i.value.trim());
   if(typed && !dChecked) return;
-  const at = dialogs.findIndex(x => lvlOf(x) === state.level);
-  if(at >= 0){ dIdx = at; renderDialog(); }
+  let at = dialogs.findIndex(x => x.topic === t && lvlOf(x) === state.level);
+  if(at < 0) at = dialogs.findIndex(x => x.topic === t);
+  if(at < 0 && t === "__custom") return;
+  if(at < 0) at = dialogs.findIndex(x => lvlOf(x) === state.level);
+  if(at >= 0 && at !== dIdx){ dIdx = at; renderDialog(); }
 }
+// all dialogues: filter by topic and level, see your best result
+let pkTopic = null, pkLevel = "all";
+function bestOf(id){ let b = null; if(!id) return b; for(const h of store.get("history", [])) if(h.k === "dict" && h.d === id) b = Math.max(b ?? 0, h.p); return b; }
+function renderPicker(){
+  const hasGen = dialogs.some(d => d.gen);
+  $("#pkTopic").innerHTML = `<option value="all">Все темы</option>` + TOPICS.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("") + (hasGen ? `<option value="gen">От Claude</option>` : "");
+  if(pkTopic === "gen" && !hasGen) pkTopic = "all";
+  $("#pkTopic").value = pkTopic;
+  document.querySelectorAll("#pkLevel button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.l === pkLevel)));
+  const items = dialogs.map((d, i) => ({ d, i })).filter(({ d }) => (pkTopic === "all" || (pkTopic === "gen" ? d.gen : d.topic === pkTopic && !d.gen)) && (pkLevel === "all" || lvlOf(d) === pkLevel));
+  let last = "";
+  $("#dlgList").innerHTML = items.length ? items.map(({ d, i }) => {
+    const g = pkTopic === "all" ? (d.gen ? "От Claude" : topicById(d.topic)?.name || "") : "";
+    const head = g && g !== last ? `<li class="dlggroup">${esc(g)}</li>` : ""; last = g || last;
+    const b = bestOf(d.id);
+    return `${head}<li><button type="button" class="dlgitem${i === dIdx ? " on" : ""}" data-i="${i}" ${i === dIdx ? 'aria-current="true"' : ""}>
+      <span class="t"><b lang="en">${esc(d.title)}</b><span class="note">${esc(d.context_ru || "")}</span></span>
+      <span class="m"><span class="chip">${esc(lvlOf(d))}</span>${b != null ? `<span class="best ${scClass(b)}" title="Лучший результат">${b}%</span>` : ""}</span></button></li>`;
+  }).join("") : `<li class="empty">Здесь пока нет диалогов этого уровня.</li>`;
+}
+$("#dLevel").onclick = () => { pkTopic = dialogs[dIdx].gen ? "gen" : (dialogs[dIdx].topic || "all"); pkLevel = "all"; renderPicker(); $("#dlgSheet").showModal(); $("#dlgList .on")?.scrollIntoView({block: "center"}); };
+$("#dlgClose").onclick = () => $("#dlgSheet").close();
+$("#pkTopic").onchange = e => { pkTopic = e.target.value; renderPicker(); };
+$("#pkLevel").addEventListener("click", e => { const b = e.target.closest("[data-l]"); if(b){ pkLevel = b.dataset.l; renderPicker(); } });
+$("#dlgList").addEventListener("click", e => { const b = e.target.closest(".dlgitem"); if(!b) return; dIdx = +b.dataset.i; renderDialog(); $("#dlgSheet").close(); if(!isPhone()) lineInput(0)?.focus(); });
 // the line being worked on (phones control it from the bar above the keyboard)
 let cur = 0;
 function setCur(i){
@@ -525,7 +531,7 @@ function checkDictation(force){
   // one result per dialogue, and only when at least half of it was done
   if(counts && !dRecorded){
     dRecorded = true;
-    pushResult("dict", avg);
+    pushResult("dict", avg, {d: d.id || ""});
     saveMistakes(results.flatMap(r => r.ops.filter(o => o.t === "sub" || o.t === "miss")
       .map(o => ({kind: "dict", type: "listening", yours: o.t === "miss" ? "(пропуск)" : bare(o.w), better: bare(o.e), why: whyMiss(o), ctx: r.expected}))).slice(0, 12));
   }
@@ -578,7 +584,7 @@ $("#dGen").onclick = async () => {
     const lvl = state.level;
     const data = await ai("dialogue", {level: lvl, topic: topicText(), avoid: dialogs.map(d => d.title).slice(-12).join("; ")});
     if(!data || !Array.isArray(data.lines) || !data.lines.length) throw {code:"invalid_json"};
-    const d = { id: "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(), level: lvl, gen: true, title: String(data.title || "New dialogue"), context_ru: String(data.context_ru || ""),
+    const d = { id: "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(), level: lvl, gen: true, topic: $("#topic").value, title: String(data.title || "New dialogue"), context_ru: String(data.context_ru || ""),
       speakers: data.speakers || {A:"A",B:"B"}, lines: data.lines.filter(l => l && l.text).map(l => ({s: l.s === "B" ? "B" : "A", text: String(l.text)})),
       vocab: Array.isArray(data.vocab) ? data.vocab.slice(0,8).map(v => ({en:String(v.en||""), ru:String(v.ru||"")})) : [] };
     const gen = store.get("genDialogs", []); gen.push(d); store.set("genDialogs", gen.slice(-40)); cloudDirty();
@@ -590,27 +596,24 @@ $("#dGen").onclick = async () => {
 };
 
 /* ---------- translation ---------- */
-const BANK = [
-  {ru:"Я работаю в этой компании с весны.", en:"I've been working at this company since spring.", focus:"Present Perfect Continuous", hint_ru:"Действие началось в прошлом и продолжается сейчас."},
-  {ru:"Если бы я знал об этом раньше, я бы тебе позвонил.", en:"If I had known about it earlier, I would have called you.", focus:"Third conditional", hint_ru:"Нереальное условие в прошлом."},
-  {ru:"Кондиционер не включается, хотя термостат работает.", en:"The AC won't turn on, even though the thermostat is working.", focus:"won't · even though", hint_ru:"«Не включается» о технике часто передают через won't."},
-  {ru:"Мне нужно, чтобы ты проверил давление в системе.", en:"I need you to check the pressure in the system.", focus:"need someone to do", hint_ru:"Без that и без would: need + кто + to + глагол."},
-  {ru:"Сколько времени у тебя ушло на установку?", en:"How long did it take you to finish the installation?", focus:"it takes … to", hint_ru:"Конструкция it take(s) someone time to do something."},
-  {ru:"Я привык рано вставать, но мне это до сих пор не нравится.", en:"I'm used to getting up early, but I still don't like it.", focus:"be used to + -ing", hint_ru:"Не путайте be used to (привык) и used to (раньше делал)."},
-  {ru:"Ей посоветовали не подписывать договор, пока юрист его не прочитает.", en:"She was advised not to sign the contract until a lawyer reads it.", focus:"Passive · until", hint_ru:"После until в английском нет отрицания и нет will."},
-  {ru:"Чем больше практикуешься, тем легче становится.", en:"The more you practice, the easier it gets.", focus:"the more … the …", hint_ru:"Обе части начинаются с the."},
-  {ru:"Мы опоздали, потому что застряли в пробке на 101-м.", en:"We were late because we got stuck in traffic on the 101.", focus:"get stuck · articles", hint_ru:"Калифорнийские шоссе называют с артиклем: the 101."},
-  {ru:"Не могли бы вы говорить чуть медленнее? Я понимаю не всё.", en:"Could you speak a little more slowly? I don't understand everything.", focus:"Polite requests", hint_ru:"Вежливая просьба начинается с Could you…"},
-  {ru:"Я уже отправил документы, но ответа пока нет.", en:"I've already sent the documents, but I haven't heard back yet.", focus:"Present Perfect · hear back", hint_ru:"«Ответа нет» естественнее через hear back."},
-  {ru:"Лучше позвони заранее, а то их может не быть на месте.", en:"You'd better call ahead, or they might not be there.", focus:"had better · might", hint_ru:"«Лучше сделай» — had better без to."}
-];
-let trQueue = store.get("trQueue", null) || shuffle(BANK.slice());
+const LV = ["A2", "B1", "B2", "C1"];
+// sentences of the chosen topic, closest level first; then the same level from other topics
+function bankQueue(){
+  const t = $("#topic").value, li = Math.max(0, LV.indexOf(state.level));
+  const near = s => Math.abs(LV.indexOf(s.level) - li);
+  const mine = shuffle(SENTENCES.filter(s => t === "__custom" || s.topic === t)).sort((a, b) => near(a) - near(b));
+  const more = t === "__custom" ? [] : shuffle(SENTENCES.filter(s => s.topic !== t && s.level === state.level));
+  return [...mine, ...more].map(({ru, en, focus, hint_ru, topic, level}) => ({ru, en, focus, hint_ru, topic, level}));
+}
+function newBankQueue(){ trQueue = bankQueue(); trIdx = 0; renderTr(); saveTr(); }
+let trQueue = store.get("trQueue", null) || bankQueue();
 let trIdx = Math.min(store.get("trIdx", 0), trQueue.length-1);
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 let trRecorded = false;
 function renderTr(){
   const it = trQueue[trIdx];
-  $("#trCounter").textContent = `Предложение ${trIdx+1} из ${trQueue.length}${it.review ? " · повторение" : ""}`;
+  const tt = topicById(it.topic)?.short;
+  $("#trCounter").textContent = `Предложение ${trIdx+1} из ${trQueue.length}${tt ? ` · ${tt}` : ""}${it.level ? ` · ${it.level}` : ""}${it.review ? " · повторение" : ""}`;
   $("#trFocus").textContent = it.focus || ""; $("#trFocus").hidden = !it.focus;
   $("#trRu").textContent = it.ru;
   $("#trIn").value = store.get("trDraft:"+it.ru, "");
@@ -633,7 +636,7 @@ $("#trGen").onclick = async () => {
   const btn = $("#trGen"), gl = btn.querySelector(".gl"); btn.disabled = true; gl.innerHTML = `<span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Подбираю…`;
   try{
     const arr = await ai("sentences", {level: state.level, topic: topicText()});
-    const list = (Array.isArray(arr) ? arr : []).filter(x => x && x.ru && x.en).map(x => ({ru:String(x.ru), en:String(x.en), focus:String(x.focus||""), hint_ru:String(x.hint_ru||"")}));
+    const list = (Array.isArray(arr) ? arr : []).filter(x => x && x.ru && x.en).map(x => ({ru:String(x.ru), en:String(x.en), focus:String(x.focus||""), hint_ru:String(x.hint_ru||""), topic: $("#topic").value, level: state.level}));
     if(!list.length) throw {code:"invalid_json"};
     trQueue = list; trIdx = 0; renderTr(); saveTr(); if(!isPhone()) $("#trIn").focus();
   }catch(e){
@@ -717,8 +720,8 @@ function renderTrResult(it, mine, r){
 }
 
 /* ---------- stats & mistakes ---------- */
-function pushResult(kind, pct){
-  const h = store.get("history", []); h.push({k:kind, p:Math.round(pct), t:Date.now()}); store.set("history", h.slice(-500)); cloudDirty();
+function pushResult(kind, pct, extra){
+  const h = store.get("history", []); h.push({k:kind, p:Math.round(pct), t:Date.now(), ...(extra || {})}); store.set("history", h.slice(-500)); cloudDirty();
   setTimeout(checkGoal, 0);
   try{ navigator.storage?.persist?.(); }catch{}
 }
@@ -1156,10 +1159,11 @@ addEventListener("offline", netState);
 // save the built-in dialogues' audio on this device, so dictation works on a plane
 function warmOffline(){
   if(!hdOn || !navigator.onLine) return;
-  const key = ["warm", pickFor("A"), pickFor("B"), state.accent, nearestRate(state.rate)].join("|");
+  const key = ["warm", BUILTIN.length, pickFor("A"), pickFor("B"), state.accent, nearestRate(state.rate)].join("|");
   if(store.get("warm", "") === key) return;
   const go = async () => {
-    const jobs = BUILTIN.flatMap(d => d.lines).filter(l => pickFor(l.s).startsWith("g:"))
+    const t = $("#topic").value;
+    const jobs = [...BUILTIN.filter(d => d.topic === t), ...BUILTIN.filter(d => d.topic !== t)].flatMap(d => d.lines).filter(l => pickFor(l.s).startsWith("g:"))
       .map(l => () => hdBlob(l.text, pickFor(l.s).slice(2), nearestRate(state.rate)));
     for(const j of jobs){ try{ await j(); }catch{ return; } }
     store.set("warm", key);
@@ -1219,7 +1223,7 @@ function applySnapshot(x){
   if(x.tr && x.tr.queue && x.tr.queue.length){ store.set("trQueue", x.tr.queue); store.set("trIdx", x.tr.idx || 0); store.set("trTs", x.trTs); }
   // show the new values
   if(!same(before.prefs, x.prefs)){
-    Object.assign(state, x.prefs);
+    Object.assign(state, x.prefs); state.topic = normTopic(state.topic);
     $("#level").value = state.level; $("#topic").value = state.topic; $("#topicCustom").value = state.custom || "";
     $("#customWrap").hidden = state.topic !== "__custom"; $("#accent").value = state.accent || "en-US";
     loadVoices(); setRate(state.rate); paintSet();

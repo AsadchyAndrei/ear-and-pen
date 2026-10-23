@@ -203,6 +203,25 @@ textarea#trIn{width:100%;min-height:96px;resize:vertical;font-size:17px;line-hei
 .ok-msg{color:var(--ok);font-size:14px}
 @media (pointer:coarse){.kbdhint,#dHelp .keys{display:none}}
 
+/* ---------- dialogue picker ---------- */
+.eyebrow.pick{background:none;border:0;padding:4px 0;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700;min-height:28px}
+.eyebrow.pick::after{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);margin-left:2px}
+.eyebrow.pick:hover{color:var(--fg)}
+dialog.sheet.tall{width:min(560px, calc(100% - 24px))}
+.pkfilters{gap:8px}
+.pkfilters{flex-wrap:wrap}
+.pkfilters select{flex:1 1 220px;min-width:0;font-size:16px;padding:9px 10px}
+.dlglist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;max-height:min(60vh, 520px);overflow:auto}
+.dlgitem{width:100%;display:flex;gap:10px;justify-content:space-between;align-items:center;text-align:left;background:var(--sunk);border:1px solid transparent;border-radius:var(--r);padding:10px 12px;cursor:pointer;color:var(--fg);font:inherit}
+.dlgitem:hover{border-color:var(--accent)}
+.dlgitem.on{border-color:var(--accent);background:var(--accent-soft)}
+.dlgitem .t{display:flex;flex-direction:column;gap:2px;min-width:0}
+.dlgitem .t .note{font-size:13px}
+.dlgitem .m{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none}
+.dlgitem .best{font-size:12px;font-weight:700;padding:1px 7px;border-radius:5px}
+.best.good{background:var(--ok-soft);color:var(--ok)} .best.mid{background:var(--miss-soft);color:var(--miss)} .best.bad{background:var(--err-soft);color:var(--err)}
+.dlggroup{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;padding:8px 2px 2px;list-style:none}
+
 /* ---------- review ---------- */
 .badge{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;margin-left:6px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;vertical-align:1px}
 .revh{font-size:22px}

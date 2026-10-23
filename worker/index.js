@@ -2,6 +2,8 @@
 // It never forwards arbitrary prompts — it only accepts the four known tasks
 // and builds the prompt itself from prompts.js, so the API key can't be used as a general proxy.
 import { PROMPTS, JSON_TASKS } from "../prompts.js";
+import { builtinTexts } from "../content.js";
+const BUILTIN_TXT = builtinTexts();
 import { verifyIdToken, allowedEmail, useQuota } from "./auth.js";
 import { vapidKeys, sendPush, runReminders, reminderText, deviceId } from "./push.js";
 
@@ -79,10 +81,13 @@ async function tts(request, url, env, ctx, headers, ip) {
     if (hit) return audio(hit, headers, "kept");
   }
   if (!env.GOOGLE_TTS_KEY) return json({ error: "tts_not_configured" }, 503, headers);
-  // audio already made is free to replay; making new audio costs money, so it needs an allowed person
-  const me = await who(request, env);
-  if (me.error) return json({ error: me.error }, me.status, headers);
-  if (!(await useQuota(env.AUDIO, me.uid, "tts", Number(env.TTS_DAILY_LIMIT || 600)))) return json({ error: "daily_limit" }, 429, headers);
+  // audio already made is free to replay; the built-in material (content.js) is voiced for everyone;
+  // any other new audio costs money, so it needs an allowed person
+  if (!BUILTIN_TXT.has(t)) {
+    const me = await who(request, env);
+    if (me.error) return json({ error: me.error }, me.status, headers);
+    if (!(await useQuota(env.AUDIO, me.uid, "tts", Number(env.TTS_DAILY_LIMIT || 600)))) return json({ error: "daily_limit" }, 429, headers);
+  }
   // new audio costs money: limit per address
   const m = Math.floor(Date.now() / 60000), h = ttsHits.get(ip);
   if (!h || h.m !== m) { if (ttsHits.size > 5000) ttsHits.clear(); ttsHits.set(ip, { m, n: 1 }); }
