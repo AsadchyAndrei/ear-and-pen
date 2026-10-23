@@ -439,12 +439,12 @@ body.phone #view-dict.speak .mine{grid-column:1/-1}
 #sWho{color:var(--fg)}
 .micsel select{max-width:220px;padding:4px 8px;font-size:14px}
 /* ---------- audit fixes: press feedback, states ---------- */
-.btn{transition:background-color .12s,border-color .12s,transform .06s,filter .12s}
-.btn:not([disabled]):active{transform:translateY(1px) scale(.98);filter:brightness(.94)}
+.btn{transition:background-color .12s,border-color .12s,filter .12s}
+.btn:not([disabled]):active{filter:brightness(.9)}
 .btn.primary:not([disabled]):not([data-locked]):hover{background:color-mix(in srgb,var(--accent) 86%,#000);border-color:color-mix(in srgb,var(--accent) 86%,#000)}
 .seg button:not([aria-pressed=true]):hover{background:var(--sunk)}
 .seg button:active{filter:brightness(.94)}
-@media (prefers-reduced-motion: reduce){.btn{transition:none}.btn:not([disabled]):active{transform:none}}
+@media (prefers-reduced-motion: reduce){.btn{transition:none}}
 body.phone .kbdhint{display:none}
 #view-dict.checked #dPeek{display:none}
 /* microphone: a stop sign while recording; only the current line's mic is filled */
@@ -498,8 +498,8 @@ body.phone #view-dict.speak .sayrow .mic{grid-column:2;grid-row:3}
 .set-more .voices select,.set-more .voices .field{width:100%}
 /* a playing button turns into a stop button */
 .btn.pl-on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
-.btn.pl-on > svg{display:none}
-.btn.pl-on::before{content:"";width:10px;height:10px;border-radius:2px;background:currentColor;flex:none}
+.btn.pl-on > svg *{display:none}
+.btn.pl-on > svg{background:currentColor;clip-path:inset(20% round 2px)}
 .line.loading .play.pl-on::after{display:none}
 /* windows: blurred page behind */
 dialog.sheet::backdrop{background:rgba(10,20,28,.42);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
@@ -508,3 +508,7 @@ dialog.sheet::backdrop{background:rgba(10,20,28,.42);-webkit-backdrop-filter:blu
 #updSheet .upd-ic svg{width:28px;height:28px}
 #updSheet .row{width:100%}
 #updSheet .row .btn{flex:1}
+/* labels that change keep the width of the longest one */
+.stk{display:inline-grid;justify-items:center;align-items:center}
+.stk > *{grid-area:1/1;display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}
+.stk > [aria-hidden=true]{visibility:hidden}

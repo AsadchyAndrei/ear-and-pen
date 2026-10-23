@@ -72,6 +72,17 @@ async function refreshAccess(){
   paintAccess(); acctUI();
 }
 const live = $("#live");
+// a button whose text changes keeps one width: all its texts are laid in the same spot, only one is visible
+function setLabel(el, html, variants){
+  if(!el) return;
+  const key = variants.join("|");
+  let st = el.querySelector(":scope > .stk");
+  if(!st || st.dataset.v !== key){
+    el.innerHTML = `<span class="stk">${variants.map(v => `<span aria-hidden="true">${v}</span>`).join("")}<span class="now"></span></span>`;
+    st = el.querySelector(":scope > .stk"); st.dataset.v = key;
+  }
+  st.querySelector(".now").innerHTML = html;
+}
 function announce(msg){ live.textContent = ""; setTimeout(() => { live.textContent = msg; }, 60); }
 // ai(task, params, {onText, signal}) → parsed JSON for JSON tasks, text otherwise
 async function ai(task, params, opts = {}){
@@ -137,7 +148,7 @@ function openSet(mode = "settings"){
   $("#setTitle").textContent = mode === "gen" ? "Новый диалог от Claude" : mode === "trgen" ? "Новые предложения от Claude" : "Настройки";
   $("#setNote").textContent = gen ? "Выберите уровень и тему — Claude напишет под них." : "Ваш уровень и тема: по ним подбираются предложения для перевода и пишет Claude.";
   $("#setGo").hidden = !gen; $("#setGo").textContent = mode === "gen" ? "Написать диалог" : "Подобрать предложения";
-  $("#setDone").textContent = gen ? "Отмена" : "Готово"; $("#setDone").classList.toggle("primary", !gen);
+  setLabel($("#setDone"), gen ? "Отмена" : "Готово", ["Отмена", "Готово"]); $("#setDone").classList.toggle("primary", !gen);
   $("#setSheet").showModal();
 }
 document.addEventListener("click", e => { if(e.target.closest("[data-set]")) openSet(); });
@@ -306,7 +317,8 @@ const MIC_I = `<svg class="ic-mic" viewBox="0 0 16 16" fill="none" stroke="curre
 const TURTLE = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 10.5h10a5 4.2 0 0 0-10 0z"/><path d="M12.5 9.8c.6-.9 1.4-1.3 2.2-1"/><path d="M4.5 10.5v2M10.5 10.5v2"/></svg>`;
 function paintPlayAll(){
   const b = $("#dPlayAll"); b.setAttribute("aria-pressed", String(playingAll));
-  b.innerHTML = playingAll ? `${PAUSE_I}<span>Пауза</span>` : `${PLAY_I}<span>Слушать<span class="pl-long"> весь диалог</span></span>`;
+  const A = `${PLAY_I}<span>Слушать<span class="pl-long"> весь диалог</span></span>`, B = `${PAUSE_I}<span>Пауза</span>`;
+  setLabel(b, playingAll ? B : A, [A, B]);
 }
 function stopSpeech(){
   speakToken++;
@@ -448,7 +460,7 @@ function setCur(i){
   cur = Math.max(0, Math.min(i, dialogs[dIdx].lines.length - 1));
   document.querySelectorAll(".line").forEach(l => l.classList.toggle("cur", +l.dataset.i === cur));
   $("#mbPos").textContent = `${cur + 1}/${dialogs[dIdx].lines.length}`;
-  $("#mbNext").textContent = cur === dialogs[dIdx].lines.length - 1 ? "Проверить" : "Дальше";
+  setLabel($("#mbNext"), cur === dialogs[dIdx].lines.length - 1 ? "Проверить" : "Дальше", ["Проверить", "Дальше"]);
 }
 async function playLine(i, mul = 1){
   const d = dialogs[dIdx]; stopSpeech(); const tok = speakToken;
@@ -559,7 +571,6 @@ function checkDictation(force){
   const errCount = results.reduce((k, r) => k + r.ops.filter(o => o.t !== "eq").length, 0);
   const skipped = n - results.length, counts = filled >= half;
   dChecked = true; lastDict = {d, results, avg};
-  $("#dCheck").textContent = "Проверить снова";
   $("#view-dict").classList.add("checked");
   updateBar();
   // one result per dialogue, and only when at least half of it was done
@@ -613,7 +624,7 @@ $("#dExplainStop").onclick = () => explainCtl?.abort();
 
 $("#dGen").onclick = () => { if(needAccess("Новые диалоги от Claude")) openSet("gen"); };
 async function genDialog(){
-  const btn = $("#dGen"), gl = btn.querySelector(".gl"); btn.disabled = true; gl.innerHTML = `<span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Пишу диалог…`;
+  const btn = $("#dGen"), gl = btn.querySelector(".gl"); btn.disabled = true; setLabel(gl, `<span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Пишу диалог…`, ["Новый диалог", `<span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Пишу диалог…`]);
   try{
     const lvl = state.level;
     const data = await ai("dialogue", {level: lvl, topic: topicText(), avoid: dialogs.map(d => d.title).slice(-12).join("; ")});
@@ -626,7 +637,7 @@ async function genDialog(){
     $(`.line[data-i="0"] input`)?.focus();
   }catch(e){
     showToast(e.code === "unavailable" ? NO_AI : errCopy(e));
-  }finally{ btn.disabled = false; gl.textContent = "Новый диалог"; }
+  }finally{ btn.disabled = false; setLabel(gl, "Новый диалог", ["Новый диалог", `<span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Пишу диалог…`]); }
 }
 
 
@@ -734,6 +745,7 @@ async function recordOnly(i, btn, out){
   if(blob && i >= 0){ setMine(i, blob); paintMine(i); playMine(i, "both"); }
   return blob;
 }
+const REC_LBL = ["● Записать себя", "● Записать заново", "■ Стоп"];
 function setMine(i, blob){ mine[i] = blob; }
 const ME_I = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="8" cy="5.5" r="2.7"/><path d="M2.8 14c.6-2.8 2.7-4.3 5.2-4.3s4.6 1.5 5.2 4.3"/></svg>`;
 const BOTH_I = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h9l-2.5-2.5M13 11H4l2.5 2.5"/></svg>`;
@@ -746,7 +758,8 @@ function paintMine(i){
   if(!box){ box = document.createElement("div"); box.className = "mine"; row.append(box); }
   box.innerHTML = `<button class="btn" type="button" data-pm="ref">${PLAY_I}Диктор</button>`
     + (mine[i] ? `<button class="btn" type="button" data-pm="me">${ME_I}Я</button><button class="btn" type="button" data-pm="both">${BOTH_I}По очереди</button>` : "")
-    + (solo ? `<button class="btn" type="button" data-pm="rec">● ${mine[i] ? "Записать заново" : "Записать себя"}</button>` : "");
+    + (solo ? `<button class="btn" type="button" data-pm="rec"></button>` : "");
+  const rb = box.querySelector('[data-pm="rec"]'); if(rb) setLabel(rb, mine[i] ? "● Записать заново" : "● Записать себя", REC_LBL);
 }
 async function playMine(i, what){
   const d = dialogs[dIdx], l = d.lines[i]; if(!l) return;
@@ -765,7 +778,7 @@ $("#lines").addEventListener("click", async e => {
     if(soloRec){ soloRec.stop(); return; }
     let heard = row.querySelector(".heard");
     if(!heard){ heard = document.createElement("div"); heard.className = "heard"; heard.setAttribute("aria-live", "polite"); row.append(heard); }
-    b.classList.add("rec-on"); b.textContent = "■ Стоп";
+    b.classList.add("rec-on"); setLabel(b, "■ Стоп", REC_LBL);
     await recordOnly(i, b, heard);
     return;
   }
@@ -1185,7 +1198,7 @@ function showSaid(i, r, row, heard){
 }
 function paintSpeakDone(){
   const n = dialogs[dIdx].lines.length, k = sBest.filter(Boolean).length;
-  $("#sDone").textContent = k ? `Итог · ${k} из ${n}` : "Итог";
+  setLabel($("#sDone"), k ? `Итог · ${k} из ${n}` : "Итог", ["Итог", `Итог · ${n} из ${n}`]);
 }
 function whySay(o){
   const right = norm(o.e || "", false), yours = norm(o.w || "", false);
@@ -1279,7 +1292,7 @@ $("#trCheck").onclick = () => checkTr();
 
 $("#trGen").onclick = () => { if(needAccess("Новые предложения от Claude")) openSet("trgen"); };
 async function genSentences(){
-  const btn = $("#trGen"), gl = btn.querySelector(".gl"); btn.disabled = true; gl.innerHTML = `<span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Подбираю…`;
+  const btn = $("#trGen"), gl = btn.querySelector(".gl"); btn.disabled = true; setLabel(gl, `<span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Подбираю…`, ["Новые предложения", `<span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Подбираю…`]);
   try{
     const arr = await ai("sentences", {level: state.level, topic: topicText()});
     const list = (Array.isArray(arr) ? arr : []).filter(x => x && x.ru && x.en).map(x => ({ru:String(x.ru), en:String(x.en), focus:String(x.focus||""), hint_ru:String(x.hint_ru||""), topic: $("#topic").value, level: state.level}));
@@ -1287,7 +1300,7 @@ async function genSentences(){
     trQueue = list; trIdx = 0; renderTr(); saveTr(); if(!isPhone()) $("#trIn").focus();
   }catch(e){
     showToast(e.code === "unavailable" ? NO_AI : errCopy(e));
-  }finally{ btn.disabled = false; gl.textContent = "Новые предложения"; }
+  }finally{ btn.disabled = false; setLabel(gl, "Новые предложения", ["Новые предложения", `<span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Подбираю…`]); }
 }
 
 
