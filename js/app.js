@@ -261,7 +261,9 @@ function speakBrowser(text, pick, rate){
 let speakToken = 0;
 // a line whose HD audio is still coming shows a spinner on its play button (and on the phone bar)
 let loadT = 0;
+let soundLoading = false;
 function setLoading(on){
+  soundLoading = !!on;
   clearTimeout(loadT);
   const apply = f => {
     document.querySelectorAll(".line.loading").forEach(l => l.classList.remove("loading"));
@@ -308,6 +310,7 @@ function paintPlayAll(){
 }
 function stopSpeech(){
   speakToken++;
+  playOff();
   setLoading(false);
   if(playingAll){ playingAll = false; paintPlayAll(); }
   if(synth) synth.cancel();
@@ -1287,6 +1290,38 @@ async function genSentences(){
   }finally{ btn.disabled = false; gl.textContent = "Новые предложения"; }
 }
 
+
+/* ---------- every play button is also a stop button ---------- */
+// press once: it plays (the button shows ■); press again at any moment: it stops
+const PLAY_SEL = ".line .play, .line .slow, .say, #rPlay, #rSlow, [data-pm]:not([data-pm=rec]), #mbReplay, #mbSlow, [data-dplay]";
+var playBtn_ = null, playWatch = null;
+function playOff(){
+  clearInterval(playWatch); playWatch = null;
+  if(playBtn_){ playBtn_.classList.remove("pl-on"); playBtn_.removeAttribute("aria-pressed"); playBtn_ = null; }
+}
+const sounding = () => soundLoading || (!player.paused && !player.ended && !!player.src) || !!(synth && (synth.speaking || synth.pending));
+document.addEventListener("click", e => {
+  const b = e.target.closest(PLAY_SEL);
+  if(b && b === playBtn_){ e.preventDefault(); e.stopImmediatePropagation(); stopSpeech(); }
+}, true);
+document.addEventListener("click", e => {
+  const b = e.target.closest(PLAY_SEL); if(!b || b.disabled) return;
+  // mark it after its own handler has started the sound
+  setTimeout(() => {
+    if(b === playBtn_) return;
+    if(playBtn_) playBtn_.classList.remove("pl-on");
+    playBtn_ = b; b.classList.add("pl-on"); b.setAttribute("aria-pressed", "true");
+    const started = Date.now(); let quiet = 0;
+    clearInterval(playWatch);
+    playWatch = setInterval(() => {
+      if(sounding()) { quiet = 0; return; }
+      // the gap between "Диктор" and "Я", or the first moments of fetching, are not the end
+      if(Date.now() - started < 1500) return;
+      if(++quiet >= 3) playOff();
+    }, 200);
+  }, 0);
+});
+
 const playBtn = (text) => `<button class="btn icon say" data-say="${esc(text)}" title="Озвучить" aria-label="Озвучить"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg></button>`;
 document.addEventListener("click", e => { const b = e.target.closest(".say"); if(b){ stopSpeech(); speak(b.dataset.say, "A"); } });
 
@@ -2010,13 +2045,14 @@ if(standalone()) try{ navigator.storage?.persist?.(); }catch{}
 const bootAt = Date.now();
 // nothing would be lost by reloading now: no typed lines, no recording, no open window
 const idle = () => ![...document.querySelectorAll(".line input, #trIn, #rIn, #ownText")].some(i => i.value.trim()) && !listening && ![...document.querySelectorAll("dialog")].some(d => d.open);
-let updEl = null;
+// a window in the middle of the screen (the page behind is blurred); "Позже" brings it back next time
 function updateBanner(w, apply){
-  // its own banner: the shared toast is replaced by other messages and the offer got lost
-  if(!updEl){ updEl = document.createElement("div"); updEl.className = "toast upd"; updEl.setAttribute("role", "status"); document.body.append(updEl); }
-  updEl.innerHTML = `Доступна новая версия <button class="toastbtn" type="button">Обновить</button>`;
-  updEl.hidden = false;
-  updEl.querySelector("button").onclick = () => { updEl.hidden = true; apply(); };
+  const d = $("#updSheet"); if(d.open) return;
+  $("#updGo").onclick = () => { d.close(); apply(); };
+  $("#updLater").onclick = () => d.close();
+  // never on top of another window: wait until it is closed
+  const show = () => { if([...document.querySelectorAll("dialog")].some(x => x.open)) return setTimeout(show, 1500); d.showModal(); $("#updGo").focus(); };
+  show();
 }
 if("serviceWorker" in navigator && location.protocol === "https:"){
   let askedReload = false;

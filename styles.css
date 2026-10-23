@@ -496,3 +496,15 @@ body.phone #view-dict.speak .sayrow .mic{grid-column:2;grid-row:3}
 .sopts label,.set-more .checkline{flex-wrap:nowrap;align-items:flex-start;gap:8px}
 .sopts label input,.set-more .checkline input{margin-top:3px;flex:none}
 .set-more .voices select,.set-more .voices .field{width:100%}
+/* a playing button turns into a stop button */
+.btn.pl-on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.btn.pl-on > svg{display:none}
+.btn.pl-on::before{content:"";width:10px;height:10px;border-radius:2px;background:currentColor;flex:none}
+.line.loading .play.pl-on::after{display:none}
+/* windows: blurred page behind */
+dialog.sheet::backdrop{background:rgba(10,20,28,.42);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+#updSheet .sheet-in{align-items:center;text-align:center}
+#updSheet .upd-ic{width:56px;height:56px;border-radius:16px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center}
+#updSheet .upd-ic svg{width:28px;height:28px}
+#updSheet .row{width:100%}
+#updSheet .row .btn{flex:1}
