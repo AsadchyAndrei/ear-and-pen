@@ -663,7 +663,7 @@ const BOTH_I = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strok
 function paintMine(i){
   const row = $(`.line[data-i="${i}"]`); if(!row) return;
   let box = row.querySelector(".mine");
-  const solo = SR && CAN_REC && $("#sRec").checked && store.get("recSolo", false);
+  const solo = !serverSTT() && SR && CAN_REC && $("#sRec").checked && store.get("recSolo", false);
   if(!mine[i] && !solo){ box?.remove(); return; }
   if(!box){ box = document.createElement("div"); box.className = "mine"; row.append(box); }
   box.innerHTML = `<button class="btn" type="button" data-pm="ref">${PLAY_I}Диктор</button>`
@@ -919,7 +919,57 @@ function listen(onInterim){
   });
 }
 // listen for one line: the button shows it is recording, live text goes to `out`
+// recognition on our server (Google): one microphone user — the recording — so it works the same on every phone
+const serverSTT = () => canAI() && CAN_REC && !!API_URL;
+async function toPCM16(blob){
+  const C = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  let ctx; try{ ctx = new C(1, 16000, 16000); }catch{ ctx = new C(1, 48000, 48000); }
+  const data = await blob.arrayBuffer();
+  const a = await new Promise((res, rej) => { const p = ctx.decodeAudioData(data, res, rej); if(p?.then) p.then(res, rej); });
+  const L = a.getChannelData(0), R = a.numberOfChannels > 1 ? a.getChannelData(1) : null;
+  const step = a.sampleRate / 16000, n = Math.floor(L.length / step), out = new Int16Array(n);
+  let peak = 0;
+  for(let k = 0; k < n; k++){
+    const from = Math.floor(k * step), to = Math.max(from + 1, Math.floor((k + 1) * step));
+    let v = 0; for(let j = from; j < to; j++) v += R ? (L[j] + R[j]) / 2 : L[j];
+    v /= (to - from); peak = Math.max(peak, Math.abs(v));
+    out[k] = Math.max(-32768, Math.min(32767, Math.round(v * 32767)));
+  }
+  return {pcm: out.buffer, peak};
+}
+const STT_ERR = {sign_in_required: "Распознавание на сервере — после входа.", not_allowed: "Распознавание на сервере доступно не всем аккаунтам.", daily_limit: "На сегодня лимит распознавания исчерпан.", rate_limited: "Слишком часто — подождите минуту.", too_short: "Слишком коротко — скажите фразу целиком.", too_large: "Слишком длинная запись — скажите одну фразу.", stt_failed: "Сервис распознавания сейчас недоступен.", stt_not_configured: "Распознавание на сервере ещё не подключено."};
+// tap: record; tap again: stop, send, compare
+async function hearServer(expected, btn, out){
+  stopSpeech();
+  let rec;
+  try{ rec = await startRec(); }catch(e){ out.classList.add("err"); out.textContent = e?.name === "NotAllowedError" ? SR_ERR["not-allowed"] : "Не получилось включить микрофон."; return null; }
+  btn.classList.add("on"); btn.setAttribute("aria-pressed", "true");
+  out.classList.remove("err"); out.textContent = "Говорите… Когда закончите — нажмите на микрофон ещё раз.";
+  const row = btn.closest(".line"); row?.classList.add("listening");
+  let aborted = false;
+  const blob = await new Promise(res => { listening = { stop(){ listening = null; rec.stop().then(res); }, abort(){ listening = null; aborted = true; rec.stop().then(res); } }; });
+  btn.classList.remove("on"); btn.setAttribute("aria-pressed", "false"); row?.classList.remove("listening");
+  if(aborted) { out.textContent = ""; return null; }
+  if(silent(blob)){ out.classList.add("err"); out.textContent = `Запись беззвучная (${recInfo(blob)}). Проверьте, что сайту разрешён микрофон: Настройки → Приложения → Safari → Микрофон.`; return null; }
+  out.textContent = "Распознаю…";
+  let alts;
+  try{
+    const {pcm} = await toPCM16(blob);
+    const res = await fetch(API_URL.replace(/\/$/, "") + "/stt?l=" + encodeURIComponent(state.accent || "en-US"), { method: "POST", headers: { ...(await authHeaders()), "Content-Type": "application/octet-stream" }, body: pcm });
+    const j = await res.json().catch(() => ({}));
+    if(!res.ok) throw {code: j.error || "stt_failed"};
+    alts = j.alts || [];
+  }catch(e){
+    out.classList.add("err"); out.textContent = STT_ERR[e?.code] || (e?.code ? "Не получилось распознать: " + e.code : "Не получилось распознать — нет связи с сервером.");
+    const r0 = {ops: [], pct: 0, heard: "", blob, failed: true}; return r0;
+  }
+  if(!alts.length){ out.classList.add("err"); out.textContent = "Речь не распознана. Скажите фразу чуть громче и чётче."; return {ops: [], pct: 0, heard: "", blob, failed: true}; }
+  const r = scoreSpeech(expected, alts); r.blob = blob;
+  out.textContent = r.pct < 100 ? "Распознано: «" + r.heard + "»" : "";
+  return r;
+}
 async function hearLine(expected, btn, out){
+  if(serverSTT()) { const r = await hearServer(expected, btn, out); return r && !r.failed ? r : null; }
   if(!SR){ out.textContent = "Этот браузер не умеет распознавать речь."; return null; }
   stopSpeech();
   btn.classList.add("on"); btn.setAttribute("aria-pressed", "true");
@@ -946,6 +996,12 @@ async function sayLine(i){
   setCur(i);
   let heard = row.querySelector(".heard");
   if(!heard){ heard = document.createElement("div"); heard.className = "heard"; heard.setAttribute("aria-live", "polite"); row.append(heard); }
+  if(serverSTT()){
+    const r = await hearServer(d.lines[i].text, row.querySelector(".mic"), heard);
+    if(r?.blob && !silent(r.blob)){ setMine(i, r.blob); paintMine(i); }
+    if(r && !r.failed) showSaid(i, r, row, heard);
+    return;
+  }
   // no recognition here: just record yourself and compare
   if(!SR){ await recordOnly(i, row.querySelector(".mic"), heard); return; }
   const withRec = $("#sRec").checked && CAN_REC && !store.get("recSolo", false);
@@ -962,6 +1018,11 @@ async function sayLine(i){
     if(store.get("recSolo", false)){ paintMine(i); if(!r) heard.textContent = "На этом телефоне запись мешает распознаванию. Скажите фразу ещё раз, а свой голос запишите кнопкой «● Записать себя»."; }
   }
   if(!r) return;
+  showSaid(i, r, row, heard);
+  if(rec && silent(blob)) heard.textContent = `Распознано. Записать голос одновременно с распознаванием этот телефон не даёт (${recInfo(blob)}) — нажмите «● Записать себя» и скажите фразу ещё раз, чтобы сравнить.`;
+}
+function showSaid(i, r, row, heard){
+  const d = dialogs[dIdx];
   const prev = sBest[i];
   sBest[i] = {...(prev && prev.pct > r.pct ? prev : r), tries: (prev?.tries || 0) + 1};
   row.classList.add("done");
@@ -970,7 +1031,6 @@ async function sayLine(i){
   el.innerHTML = `<span class="sc ${scClass(r.pct)}">${r.pct}%</span>${diffHTML(r.ops)}${r.pct >= SPEAK_PASS ? `<span class="ok-msg">✓</span>` : ""}${sBest[i].tries > 1 ? `<span class="tries">лучшая попытка: ${sBest[i].pct}%</span>` : ""}`;
   row.insertBefore(el, heard);
   paintMine(i);
-  if(rec && silent(blob)) heard.textContent = `Распознано. Записать голос одновременно с распознаванием этот телефон не даёт (${recInfo(blob)}) — нажмите «● Записать себя» и скажите фразу ещё раз, чтобы сравнить.`;
   announce(`${r.pct} процентов. ${r.pct >= SPEAK_PASS ? "Хорошо." : "Попробуйте ещё раз."}`);
   paintSpeakDone();
   if(r.pct >= SPEAK_PASS && i + 1 < d.lines.length){

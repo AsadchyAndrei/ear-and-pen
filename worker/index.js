@@ -111,6 +111,47 @@ async function tts(request, url, env, ctx, headers, ip) {
   return audio(buf, headers, "new");
 }
 
+/* ---------- Speech recognition: Google Speech-to-Text, for an allowed person ----------
+   POST /stt?l=<en-US|en-GB>  body: 16-bit PCM, 16 kHz, mono (one spoken phrase) → {alts: [...]}
+   The same Google key as the voice (it must also allow the Speech-to-Text API). */
+const sttHits = new Map();
+const MAX_STT = 16000 * 2 * 20; // 20 seconds
+async function stt(request, url, env, headers, ip) {
+  if (!env.GOOGLE_TTS_KEY) return json({ error: "stt_not_configured" }, 503, headers);
+  const me = await who(request, env);
+  if (me.error) return json({ error: me.error }, me.status, headers);
+  const m = Math.floor(Date.now() / 60000), h = sttHits.get(ip);
+  if (!h || h.m !== m) { if (sttHits.size > 5000) sttHits.clear(); sttHits.set(ip, { m, n: 1 }); }
+  else if (++h.n > Number(env.STT_PER_MINUTE || 30)) return json({ error: "rate_limited" }, 429, headers);
+  const l = url.searchParams.get("l") || "en-US";
+  if (!TTS_LOCALES.has(l)) return json({ error: "bad_request" }, 400, headers);
+  const buf = new Uint8Array(await request.arrayBuffer());
+  if (buf.length < 3200 || buf.length > MAX_STT) return json({ error: buf.length < 3200 ? "too_short" : "too_large" }, 400, headers);
+  if (!(await useQuota(env.AUDIO, me.uid, "stt", Number(env.STT_DAILY_LIMIT || 400)))) return json({ error: "daily_limit" }, 429, headers);
+  let bin = "";
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  const res = await fetch("https://speech.googleapis.com/v1/speech:recognize", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": String(env.GOOGLE_TTS_KEY).trim() },
+    body: JSON.stringify({
+      config: { encoding: "LINEAR16", sampleRateHertz: 16000, languageCode: l, maxAlternatives: 5, enableAutomaticPunctuation: true, model: "latest_short" },
+      audio: { content: btoa(bin) },
+    }),
+  });
+  if (!res.ok) {
+    let info = {};
+    try { info = (await res.json()).error || {}; } catch {}
+    console.log("stt error", res.status, info.status, info.message);
+    return json({ error: "stt_failed", upstream: { status: res.status, reason: info.status, message: String(info.message || "").slice(0, 200) } }, 502, headers);
+  }
+  const out = await res.json();
+  const results = (out.results || []).filter(r => r.alternatives && r.alternatives.length);
+  const alts = results.length === 1
+    ? results[0].alternatives.map(a => String(a.transcript || "").trim()).filter(Boolean)
+    : results.length ? [results.map(r => String(r.alternatives[0].transcript || "").trim()).join(" ")] : [];
+  return json({ alts }, 200, { ...headers, "Cache-Control": "no-store" });
+}
+
 function parseJSON(text) {
   try { return JSON.parse(text); } catch {}
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -196,6 +237,10 @@ export default {
     if (request.method === "GET" && url.pathname === "/tts") {
       if (!ok || !origin) return json({ error: "origin_not_allowed" }, 403, headers);
       return tts(request, url, env, ctx, headers, request.headers.get("CF-Connecting-IP") || "?");
+    }
+    if (request.method === "POST" && url.pathname === "/stt") {
+      if (!ok || !origin) return json({ error: "origin_not_allowed" }, 403, headers);
+      return stt(request, url, env, headers, request.headers.get("CF-Connecting-IP") || "?");
     }
     if (request.method === "GET") return json({ ok: true, service: "ear-and-pen", voice: !!env.GOOGLE_TTS_KEY, kept: !!env.AUDIO, access: !!env.ALLOWED_EMAILS }, 200, headers);
     if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405, headers);

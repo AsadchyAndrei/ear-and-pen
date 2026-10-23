@@ -14,6 +14,8 @@ FIREBASE_PROJECT = "ear-and-pen"
 # per person per day
 AI_DAILY_LIMIT = "150"
 TTS_DAILY_LIMIT = "600"
+STT_DAILY_LIMIT = "400"
+STT_PER_MINUTE = "30"
 
 # Secret (set in the Cloudflare dashboard, never in this file):
 #   ANTHROPIC_API_KEY
