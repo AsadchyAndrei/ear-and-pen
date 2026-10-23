@@ -46,6 +46,12 @@
 
 Проект Firebase `ear-and-pen`: вход через Google и по email, Cloud Firestore (`nam5`), правила из `firestore.rules` (каждый видит только свой документ `users/{uid}`). Домен `earandpen.net` добавлен в Authentication → Settings → Authorized domains. Настройки проекта — в `config.js` (`FIREBASE`); это публичные идентификаторы, данные защищают правила.
 
+Ключ браузера Firebase ограничен сайтами (Google Cloud → проект `ear-and-pen` → APIs & Services → Credentials → «Browser key»: `https://earandpen.net/*`, `https://www.earandpen.net/*`, `https://ear-and-pen.firebaseapp.com/*`). Для запуска на новом адресе (например, `localhost`) его нужно добавить туда же.
+
+Расходы на озвучку: в Google Cloud Billing (платёжный аккаунт проекта `pip-sky-islands`, где ключ TTS) есть бюджет «Ear & Pen — Text-to-Speech» на $5 в месяц с письмами на 50, 90 и 100%.
+
+Превью ссылки в мессенджерах — `og.png` (1200×630) и теги Open Graph в `index.html`.
+
 ## Доступ к платным функциям
 
 Проверка и разбор от Claude, генерация диалогов и предложений и озвучка **новых** фраз работают только после входа и только для аккаунтов из списка. Уже озвученные фразы, встроенные диалоги и сверка с эталоном доступны всем.
