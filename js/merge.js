@@ -10,6 +10,7 @@
 //   rev       review schedule per card      — per card, the latest review wins (last)
 //   days      days the daily goal was met   — union of both devices (for the streak)
 //   words     phrase cards from dialogues   — union of both devices (earliest "added" kept)
+//   civ       citizenship test, per question — the latest answer wins (last)
 //   gone      ids of deleted dialogues      — union; those dialogues are dropped everywhere
 //   cleared   "clear history" time          — anything older is dropped everywhere
 
@@ -66,6 +67,13 @@ export function merge(a, b) {
       if (!words[k] || w.a < words[k].a) words[k] = w;
     }
   }
+  const civ = {};
+  for (const src of [a.civ, b.civ]) {
+    for (const [k, r] of Object.entries(src || {})) {
+      if (!r || typeof r !== "object" || !((r.last || 0) > cleared)) continue;
+      if (!civ[k] || (r.last || 0) > (civ[k].last || 0)) civ[k] = r;
+    }
+  }
   return {
     v: SYNC_V,
     prefs: prefSrc.prefs || {},
@@ -78,6 +86,7 @@ export function merge(a, b) {
     rev,
     days,
     words,
+    civ,
     gone,
     cleared,
   };

@@ -551,3 +551,59 @@ body.has-sess{padding-bottom:110px}
 .vclist li{display:flex;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line);font-size:14px}
 .vclist li .d{flex:1}
 .vclist li .p{color:var(--muted);font-family:var(--f-mono);font-size:13px}
+
+/* citizenship test */
+.civentry{display:flex;align-items:center;gap:12px;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;background:var(--accent-soft);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin:2px 0 4px}
+.civentry:hover{filter:brightness(.97)} .civentry:active{filter:brightness(.92)}
+.civentry .ce-ic{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--surface);color:var(--accent)}
+.civentry .ce-ic svg{width:20px;height:20px}
+.civentry .ce-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.civentry .ce-txt .note{margin:0}
+.civentry .ce-go{flex:none;font-size:20px;color:var(--accent)}
+.civsheet .sheet-in{gap:12px}
+.civtabs{display:flex;width:100%} .civtabs button{flex:1;font-family:var(--f-body);font-size:15px;font-weight:600}
+.civmode{display:flex;width:100%} .civmode button{flex:1;font-family:var(--f-body);font-size:14px;font-weight:600}
+.civpane{display:flex;flex-direction:column;gap:12px}
+.civpane > .note{margin:0}
+.civtop{display:flex;flex-direction:column;gap:10px}
+.civprog .meter{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:4px}
+.civprog .meter i{display:block;height:100%;width:0;background:var(--ok);border-radius:4px;transition:width .3s}
+.civprog b{font-size:20px}
+.civopts{display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:var(--r);background:var(--sunk)}
+.civopts .row.note{margin:0;align-items:flex-start;flex-wrap:nowrap} .civopts .row.note input{margin-top:3px}
+.civstate{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.civstate .note{margin:0}
+.civcard{display:flex;flex-direction:column;gap:10px;background:var(--sunk);border-radius:var(--r);padding:14px 16px}
+.civmeta{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.civstat{font-weight:600;text-transform:none;letter-spacing:0}
+.civq{display:flex;gap:10px;align-items:flex-start}
+.civq p{margin:0;font-size:19px;font-weight:600;line-height:1.35;flex:1;min-width:0}
+.civq p.hid{color:transparent;text-shadow:0 0 9px rgba(90,107,120,.55);cursor:pointer;user-select:none}
+.civru{margin:0;color:var(--muted)}
+.civneed{margin:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.civans{display:flex;flex-direction:column;gap:8px}
+.civmic{align-self:flex-start}
+.sheet-in form.civtype{display:flex;flex-direction:row;gap:8px} .civtype input{flex:1;min-width:0}
+.civans .btn.ghost{align-self:flex-start}
+.civout{margin:0} .civout:empty{display:none} .civout.err{color:var(--err)}
+.civres{display:flex;flex-direction:column;gap:8px}
+.civres p{margin:0}
+.civverdict{font-weight:700;font-size:17px;padding:6px 10px;border-radius:8px;align-self:flex-start}
+.civverdict.ok{background:var(--ok-soft);color:var(--ok)} .civverdict.bad{background:var(--err-soft);color:var(--err)} .civverdict.idk{background:var(--miss-soft);color:var(--miss)}
+.civlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.civlist li{display:flex;align-items:center;gap:8px;padding:2px 0}
+.civlist li.hit span{font-weight:700;color:var(--ok)}
+.civlist li.more{display:block} .civlist summary{cursor:pointer;color:var(--accent);padding:4px 0}
+.civsess{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:8px;background:var(--accent-soft)}
+.civnext{margin-top:2px}
+.civsum{display:flex;flex-direction:column;gap:10px}
+.civsum p{margin:0}
+.civlog{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:14px}
+.civlog li span{display:inline-block;width:18px;font-weight:700}
+.civlog li.hit span{color:var(--ok)} .civlog li.miss span{color:var(--err)}
+.civsent{margin:0;font-size:22px;font-weight:600;line-height:1.35}
+.okc{color:var(--ok)} .errc{color:var(--err)}
+.civsrc{margin:4px 0 0;font-size:13px}
+.civsheet .civtype input[type=text]{width:auto;flex:1;min-width:0} .civtype .btn{flex:none}
+.civhint{margin:6px 0 0;font-size:13px}
+.civsheet a{color:var(--accent)}

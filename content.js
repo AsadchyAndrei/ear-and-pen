@@ -3,6 +3,7 @@
 // because the list is fixed and small. Anything else needs a signed-in, allowed person.
 //
 // Dialogue line: [speaker, text]. Vocabulary: [english, russian].
+import { civTexts } from "./civics.js";
 
 export const TOPICS = [
   { id: "daily",    name: "Повседневные ситуации",                 short: "Повседневные", prompt: "everyday life in the US: neighbors, apartment, small talk, errands" },
@@ -477,5 +478,6 @@ export const builtinTexts = () => {
   const set = new Set();
   for (const d of DIALOGS) { for (const [, t] of d.lines) set.add(n(t)); for (const [en] of d.vocab || []) set.add(n(en)); }
   for (const s of SENTENCES) set.add(n(s.en));
+  for (const t of civTexts()) set.add(n(t));
   return set;
 };

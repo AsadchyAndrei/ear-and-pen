@@ -1,8 +1,10 @@
 // Ear & Pen — the whole app: dictation, translation, progress, voice, phone layout, install, sync.
 import { PROMPTS, JSON_TASKS } from "../prompts.js";
 import { TOPICS, topicById, DIALOGS, SENTENCES } from "../content.js";
+import { CIVICS, CIV_SECTIONS, CIV_ALIASES, CIV_READ, CIV_WRITE, US_STATES } from "../civics.js";
 import { API_URL, FIREBASE } from "../config.js";
 import { merge, same } from "./merge.js";
+import { grade as civGrade } from "./civmatch.js";
 {
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -399,6 +401,7 @@ function renderDialog(){
   paintEyebrow();
   $("#dTitle").textContent = d.title;
   $("#dContext").textContent = d.context_ru || "";
+  if(civInit) civRefresh();
   const sp = d.speakers || {};
   const speakMode = state.dmode === "speak";
   $("#lines").classList.toggle("hidetext", speakMode && !$("#sText").checked);
@@ -850,7 +853,10 @@ function readiness(t){
   const learned = [...keys].filter(k => (rev[k]?.step || 0) >= 2).length;
   const pct = Math.round(100 * (voice ? 0.4 * written / n + 0.35 * spoken / n + 0.25 * learned / Math.max(1, keys.size) : 0.6 * written / n + 0.4 * learned / Math.max(1, keys.size)));
   const left = (n - written) + (voice ? n - spoken : 0);
-  return {pct, n, written, spoken, voice, phrases: keys.size, learned, left};
+  // citizenship: the civics test is half of being ready
+  const civ = t.topic === "citizen" && civInit ? civStats() : null;
+  const all = civ ? Math.round(pct / 2 + 50 * civ.known / Math.max(1, civ.total)) : pct;
+  return {pct: all, n, written, spoken, voice, phrases: keys.size, learned, left, civ};
 }
 function paintGoal(){
   const t = target(), bar = $("#goalBar");
@@ -865,7 +871,9 @@ function paintGoal(){
   if(d < 0) $("#gbSub").textContent = "Дата прошла — как всё прошло? Поставьте следующую цель";
   else {
     const per = r && r.left ? Math.ceil(r.left / Math.max(1, d)) : 0;
-    $("#gbSub").textContent = `${d === 0 ? "сегодня" : d === 1 ? "завтра" : `через ${daysWord(d)}`}${r ? ` · ${per ? `по плану: ${per} ${plural(per, "диалог", "диалога", "диалогов")} в день` : "всё пройдено — повторяйте"}` : ""}`;
+    const cq = r?.civ ? Math.ceil((r.civ.total - r.civ.known) / Math.max(1, d)) : 0;
+    const plan = [per ? `${per} ${plural(per, "диалог", "диалога", "диалогов")}` : "", cq ? `${cq} ${plural(cq, "вопрос", "вопроса", "вопросов")} теста` : ""].filter(Boolean).join(" и ");
+    $("#gbSub").textContent = `${d === 0 ? "сегодня" : d === 1 ? "завтра" : `через ${daysWord(d)}`}${r ? ` · ${plan ? `по плану: ${plan} в день` : "всё пройдено — повторяйте"}` : ""}`;
   }
 }
 function goalDetail(){
@@ -877,6 +885,7 @@ function goalDetail(){
   el.innerHTML = `<div class="row"><b>Готовность</b><b>${r.pct}%</b></div><div class="meter"><i style="width:${r.pct}%"></i></div>
     <div>Диалоги письменно: ${r.written} из ${r.n}${r.voice ? ` · голосом: ${r.spoken} из ${r.n}` : ""}</div>
     <div>Выражения выучены: ${r.learned} из ${r.phrases}</div>
+    ${r.civ ? `<div>Вопросы теста USCIS: выучено ${r.civ.known} из ${r.civ.total}</div>` : ""}
     ${d >= 0 && r.left ? `<div class="note">Осталось ${r.left} ${plural(r.left, "задание", "задания", "заданий")} — примерно ${Math.ceil(r.left / Math.max(1, d))} в день. Каждый день — «Начать занятие».</div>` : ""}`;
 }
 function openGoal(){
@@ -927,6 +936,7 @@ function startSession(){
   const voice = !!(SR || serverSTT());
   if((bestKind(d.id, "dict") ?? 0) < 80 || !voice) steps.push({k: "dict", d: d.id, label: `Диалог на слух: «${d.title}»`});
   if(voice) steps.push({k: "speak", d: d.id, label: `Тот же диалог — вслух`});
+  if(topic === "citizen") steps.push({k: "civ", n: 5, label: "Тест USCIS: 5 вопросов"});
   steps.push({k: "tr", n: 3, label: "Перевод: 3 предложения"});
   if(CAN_REC && !voiceLog().some(v => v.w === weekKey())) steps.push({k: "voice", label: "Запись голоса этой недели"});
   sess = {steps, i: 0, tr: 0};
@@ -942,6 +952,7 @@ function goStep(){
     showView("dict"); scrollTo({top: 0, behavior: "smooth"});
   }
   if(st.k === "tr"){ sess.tr = 0; showView("tr"); }
+  if(st.k === "civ"){ sess.civ = 0; openCiv("q"); }
   if(st.k === "voice"){ showView("stats"); setTimeout(() => $("#voiceCard").scrollIntoView({block: "center", behavior: "smooth"}), 150); }
   paintSess();
 }
@@ -960,7 +971,7 @@ function sessHit(kind, d){
   if(!sess) return;
   const st = sess.steps[sess.i]; if(!st || st.done) return;
   const ok = (kind === st.k && (st.k === "dict" || st.k === "speak") && d === st.d) || (st.k === "rev" && kind === "revdone") || (st.k === "voice" && kind === "voice")
-    || (st.k === "tr" && kind === "tr" && ++sess.tr >= st.n);
+    || (st.k === "tr" && kind === "tr" && ++sess.tr >= st.n) || (st.k === "civ" && kind === "civ" && ++sess.civ >= st.n);
   if(ok){ st.done = true; paintSess(); announce("Шаг выполнен"); }
 }
 function finishSession(){
@@ -1316,6 +1327,7 @@ async function hearServer(expected, btn, out){
     const r0 = {ops: [], pct: 0, heard: "", blob, failed: true}; return r0;
   }
   if(!alts.length){ out.classList.add("err"); out.textContent = "Речь не распознана. Скажите фразу чуть громче и чётче."; return {ops: [], pct: 0, heard: "", blob, failed: true}; }
+  if(expected == null){ out.textContent = "«" + alts[0] + "»"; return {alts, blob}; }
   const r = scoreSpeech(expected, alts); r.blob = blob;
   out.textContent = r.pct < 100 ? "Распознано: «" + r.heard + "»" : "";
   return r;
@@ -1333,6 +1345,7 @@ async function hearLine(expected, btn, out){
   btn.classList.remove("on"); btn.setAttribute("aria-pressed", "false"); row?.classList.remove("listening");
   if(!alts) return null;
   if(!alts.length){ out.classList.add("err"); out.textContent = "Ничего не услышал. Нажмите на микрофон и скажите фразу целиком."; return null; }
+  if(expected == null){ out.textContent = "«" + alts[0] + "»"; return {alts}; }
   const r = scoreSpeech(expected, alts);
   out.textContent = r.pct < 100 ? "Распознано: «" + r.heard + "»" : "";
   return r;
@@ -2150,6 +2163,272 @@ async function reportStatus(force){
   try{ await api("/push/status", "POST", body); }catch{ lastStatus = ""; }
 }
 
+/* ---------- citizenship test (USCIS): civics questions, reading, writing ---------- */
+var civInit = false;
+const CIV = CIVICS.map(([n, en, ru, answers, f = ""]) => ({n, en, ru, official: answers, answers: [...answers, ...(CIV_ALIASES[n] || [])], star: f.includes("*"), state: f.includes("S"), need: Number(f.replace(/\D/g, "")) || 1}));
+const civSec = n => [...CIV_SECTIONS].reverse().find(s => n >= s.from);
+const civLog = () => store.get("civ", {}) || {};
+const civMine = () => store.get("civMine", {}) || {};
+const civKnown = r => !!r && (r.s || 0) >= 2;
+const civSetAll = () => store.get("civSet", "all") !== "6520";
+const civPool = () => CIV.filter(q => civSetAll() || q.star);
+// the four questions about your state take their answers from "Мой штат"
+function civQ(q){
+  if(!q.state) return q;
+  const m = civMine(), st = US_STATES.find(x => x[0] === m.st);
+  const names = s => String(s || "").split(/[,;]|\band\b/).map(x => x.trim()).filter(Boolean);
+  const full = q.n === 23 ? names(m.sen) : q.n === 29 ? names(m.rep) : q.n === 61 ? names(m.gov) : q.n === 62 && st ? [st[2]] : [];
+  const answers = full.flatMap(x => { const p = x.split(/\s+/); return p.length > 1 ? [x, p[p.length - 1]] : [x]; });
+  return {...q, official: full, answers};
+}
+const civReady = q => !q.state || civQ(q).answers.length > 0;
+function civStats(){
+  const log = civLog(), pool = civPool();
+  return {known: pool.filter(q => civKnown(log[q.n])).length, total: pool.length};
+}
+function civMark(n, ok){
+  const log = civLog(), r = {s: 0, ok: 0, bad: 0, ...(log[n] || {})};
+  r.last = Date.now();
+  if(ok){ r.ok++; r.s++; } else { r.bad++; r.s = 0; }
+  log[n] = r; store.set("civ", log); cloudDirty();
+}
+let civMode = "learn", civCur = null, civRecent = [], civEx = null, civAnsweredNow = false;
+const CIV_MIC = [`${MIC_I}<span>Ответить голосом</span>`, `${STOP_I}<span>Готово</span>`];
+const RD_MIC = [`${MIC_I}<span>Прочитать вслух</span>`, `${STOP_I}<span>Готово</span>`];
+const canHear = () => !!(SR || serverSTT());
+
+function civRefresh(){
+  const d = dialogs[dIdx], on = d?.topic === "citizen" || state.topic === "citizen" || target()?.topic === "citizen";
+  $("#civEntry").hidden = !on;
+  const s = civStats();
+  $("#civEntrySub").textContent = s.known ? `Выучено ${s.known} из ${s.total} · чтение и письмо` : `${s.total} вопросов, чтение и письмо — как на интервью`;
+  if($("#civSheet").open) civPaintProg();
+}
+function civPaintProg(){
+  const s = civStats();
+  $("#civKnown").textContent = s.known;
+  $("#civKnownOf").textContent = `из ${s.total} выучено`;
+  $("#civHint").hidden = s.known >= 3;
+  $("#civMeter").style.width = Math.round(100 * s.known / Math.max(1, s.total)) + "%";
+}
+function civPick(){
+  const log = civLog(), pool = civPool().filter(civReady);
+  const fresh = pool.filter(q => !civKnown(log[q.n]) && !civRecent.includes(q.n));
+  if(fresh.length){
+    // the ones you missed come back first, then the ones you have not seen yet
+    const missed = fresh.filter(q => log[q.n]?.bad && !(log[q.n].s));
+    const list = missed.length && Math.random() < 0.6 ? missed : fresh;
+    return list[Math.floor(Math.random() * list.length)];
+  }
+  const old = pool.filter(q => !civRecent.includes(q.n)).sort((a, b) => (log[a.n]?.last || 0) - (log[b.n]?.last || 0)).slice(0, 10);
+  return old[Math.floor(Math.random() * old.length)] || pool[0];
+}
+function civShow(q){
+  civCur = q; civAnsweredNow = false;
+  civRecent = [q.n, ...civRecent.filter(x => x !== q.n)].slice(0, Math.min(8, Math.floor(civPool().length / 2)));
+  const log = civLog()[q.n];
+  $("#civMeta").textContent = `Вопрос ${q.n}${q.star ? " ★" : ""} · ${civSec(q.n).name}`;
+  $("#civStat").textContent = civEx ? `${civEx.i + 1} из ${civEx.qs.length} · верно ${civEx.ok} · ошибок ${civEx.bad}` : log ? (civKnown(log) ? "выучен ✓" : log.s ? `верно ${log.s} раз подряд` : "была ошибка") : "новый";
+  $("#civText").textContent = q.en;
+  $("#civText").classList.toggle("hid", !$("#civShow").checked);
+  $("#civText").title = $("#civShow").checked ? "" : "Текст скрыт — как на интервью. Нажмите, чтобы показать.";
+  $("#civPlay").dataset.say = q.en;
+  $("#civRu").textContent = q.ru; $("#civRu").hidden = !$("#civRuOn").checked;
+  const ready = civReady(q);
+  $("#civNeed").hidden = q.need < 2 && ready;
+  $("#civNeed").innerHTML = !ready ? `Это вопрос про ваш штат. <button class="btn ghost" type="button" id="civToState">Указать мой штат</button>` : `Нужно назвать ${q.need}.`;
+  $("#civAns").hidden = false; $("#civIn").value = ""; $("#civIdk").hidden = !ready;
+  $("#civMic").hidden = !canHear() || !ready; $("#civForm").hidden = !ready;
+  setLabel($("#civMic"), CIV_MIC[0], CIV_MIC);
+  $("#civOut").textContent = ""; $("#civOut").classList.remove("err");
+  $("#civRes").hidden = true; $("#civNextRow").hidden = !(!ready && !civEx);
+  $("#civNext").textContent = "Следующий вопрос →";
+  $("#civSum").hidden = true; $("#civCard").hidden = false;
+  stopSpeech(); setTimeout(() => $("#civPlay").click(), 120);
+}
+$("#civText").onclick = () => $("#civText").classList.remove("hid");
+document.addEventListener("click", e => { if(e.target.closest("#civToState")) civOpenOpts(true); });
+document.addEventListener("click", e => { if(e.target.closest("#civSessGo")){ $("#civSheet").close(); if(sess){ sess.i++; goStep(); } } });
+const civSpeakable = a => a.replace(/\[[^\]]*\]/g, "").replace(/[()]/g, "").replace(/\s+/g, " ").trim();
+function civAnswer(alts, idk){
+  if(civAnsweredNow || !civCur) return;
+  const q = civQ(civCur);
+  let best = {ok: false, hits: [], count: 0, heard: alts[0] || ""};
+  if(!idk) for(const style of ["plain", "pairs"]){
+    const r = civGrade(q, alts, t => spNorm(String(t).replace(/(\d+)(st|nd|rd|th)\b/gi, "$1"), style));
+    if(r.ok && !best.ok || (r.count || 0) > (best.count || 0)) best = r;
+    if(best.ok) break;
+  }
+  civAnsweredNow = true; stopListening();
+  civMark(q.n, best.ok);
+  sessHit("civ");
+  const hit = new Set(best.hits);
+  const list = q.official.map(a => `<li class="${hit.has(a) ? "hit" : ""}">${playBtn(civSpeakable(a))}<span>${esc(a)}</span></li>`);
+  const shown = list.length > 8 ? list.slice(0, 8).join("") + `<li class="more"><details><summary>ещё ${list.length - 8}</summary><ul class="civlist">${list.slice(8).join("")}</ul></details></li>` : list.join("");
+  $("#civRes").innerHTML = `<div class="civverdict ${best.ok ? "ok" : idk ? "idk" : "bad"}">${best.ok ? "✓ Засчитано" : idk ? "Запомните ответ" : "✗ Не засчитано"}</div>
+    ${!idk && best.heard ? `<p class="note">Ваш ответ: «${esc(best.heard)}»${!best.ok && q.need > 1 && best.count ? ` — назвали ${best.count} из ${q.need}` : ""}</p>` : ""}
+    <p class="lbl">${q.official.length > 1 ? `Правильные ответы — ${q.need > 1 ? `назовите ${q.need} любых` : "любой из них"}` : "Правильный ответ"}</p>
+    <ul class="civlist">${shown}</ul>`;
+  $("#civRes").hidden = false; $("#civAns").hidden = true; $("#civOut").textContent = "";
+  $("#civText").classList.remove("hid");
+  if(civEx){
+    civEx[best.ok ? "ok" : "bad"]++; civEx.log.push({n: q.n, ok: best.ok});
+    $("#civStat").textContent = `${civEx.i + 1} из ${civEx.qs.length} · верно ${civEx.ok} · ошибок ${civEx.bad}`;
+    const end = civEx.ok >= civEx.pass || civEx.bad > civEx.qs.length - civEx.pass || civEx.i >= civEx.qs.length - 1;
+    $("#civNext").textContent = end ? "Итог интервью →" : "Следующий вопрос →";
+  }
+  const sst = sess?.steps[sess.i];
+  if(sst?.k === "civ" && sst.done && !sst.told){ sst.told = true; $("#civRes").insertAdjacentHTML("beforeend", `<div class="civsess"><span>Шаг занятия выполнен.</span><button class="btn primary" type="button" id="civSessGo">Продолжить занятие →</button></div>`); }
+  $("#civNextRow").hidden = false;
+  civPaintProg(); civRefresh();
+  announce(best.ok ? "Засчитано" : "Не засчитано");
+}
+$("#civForm").onsubmit = e => { e.preventDefault(); const v = $("#civIn").value.trim(); if(!v){ $("#civIn").focus(); return; } civAnswer([v]); };
+$("#civIdk").onclick = () => civAnswer([], true);
+$("#civMic").onclick = async () => {
+  if(listening){ stopListening(true); return; }
+  const btn = $("#civMic");
+  setLabel(btn, CIV_MIC[1], CIV_MIC);
+  const r = await hearLine(null, btn, $("#civOut"));
+  setLabel(btn, CIV_MIC[0], CIV_MIC);
+  if(r?.alts?.length) civAnswer(r.alts);
+};
+$("#civNext").onclick = () => {
+  if(civEx){
+    const end = civEx.ok >= civEx.pass || civEx.bad > civEx.qs.length - civEx.pass || civEx.i >= civEx.qs.length - 1;
+    if(end) return civSummary();
+    civEx.i++; return civShow(civEx.qs[civEx.i]);
+  }
+  civShow(civPick());
+};
+function civStartExam(){
+  const all = civSetAll(), pool = civPool().filter(civReady).sort(() => Math.random() - 0.5);
+  const n = all ? 20 : 10;
+  civEx = {qs: pool.slice(0, n), i: 0, ok: 0, bad: 0, pass: all ? 12 : 6, log: []};
+  civShow(civEx.qs[0]);
+}
+function civSummary(){
+  const x = civEx, passed = x.ok >= x.pass;
+  stopSpeech();
+  $("#civCard").hidden = true; $("#civSum").hidden = false;
+  $("#civSheet").scrollTo({top: 0, behavior: "smooth"});
+  $("#civSum").innerHTML = `<div class="civverdict ${passed ? "ok" : "bad"}">${passed ? "✓ Тест сдан" : "✗ Пока не сдан"}</div>
+    <p>Верно ${x.ok}, ошибок ${x.bad}. ${passed ? `Офицер останавливается, как только набрано ${x.pass} правильных ответов.` : `Нужно ${x.pass} правильных из ${x.qs.length}; при ${x.qs.length - x.pass + 1} ошибках интервью по истории заканчивается.`}</p>
+    <ul class="civlog">${x.log.map(l => { const q = CIV.find(c => c.n === l.n); return `<li class="${l.ok ? "hit" : "miss"}"><span>${l.ok ? "✓" : "✗"}</span> ${l.n}. ${esc(q.en)}</li>`; }).join("")}</ul>
+    <div class="row"><button class="btn primary" type="button" id="civAgain">Ещё одно интервью</button><button class="btn" type="button" id="civToLearn">К тренировке</button></div>`;
+  civEx = null;
+}
+document.addEventListener("click", e => {
+  if(e.target.closest("#civAgain")) civStartExam();
+  if(e.target.closest("#civToLearn")) civSetMode("learn");
+});
+function civSetMode(m){
+  civMode = m;
+  document.querySelectorAll("#civMode button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.m === m)));
+  civEx = null;
+  $("#civOpts").hidden = true; $("#civOptsBtn").setAttribute("aria-expanded", "false");
+  if(m === "exam") civStartExam(); else civShow(civPick());
+}
+$("#civMode").onclick = e => { const b = e.target.closest("button"); if(b && b.dataset.m !== civMode) civSetMode(b.dataset.m); else if(b && b.dataset.m === "exam") civSetMode("exam"); };
+function civOpenOpts(toState){
+  $("#civOpts").hidden = false; $("#civOptsBtn").setAttribute("aria-expanded", "true");
+  if(toState) setTimeout(() => { $(".civstate").scrollIntoView({block: "start", behavior: "smooth"}); $("#civSt").focus(); }, 50);
+}
+$("#civOptsBtn").onclick = () => { const open = $("#civOpts").hidden; $("#civOpts").hidden = !open; $("#civOptsBtn").setAttribute("aria-expanded", String(open)); };
+$("#civSt").innerHTML += US_STATES.map(([c, n]) => `<option value="${c}">${n}</option>`).join("");
+function civPaintMine(){ const m = civMine(); $("#civSt").value = m.st || ""; $("#civSen").value = m.sen || ""; $("#civRep").value = m.rep || ""; $("#civGov").value = m.gov || ""; }
+const civSaveMine = () => {
+  setPref("civMine", {st: $("#civSt").value, sen: $("#civSen").value.trim(), rep: $("#civRep").value.trim(), gov: $("#civGov").value.trim()});
+  if(civCur?.state && !civAnsweredNow && !civEx) civShow(civCur);
+};
+["#civSt", "#civSen", "#civRep", "#civGov"].forEach(s => $(s).addEventListener("change", civSaveMine));
+$("#civSet").onchange = e => { setPref("civSet", e.target.value); civPaintProg(); civRefresh(); civSetMode(civMode); };
+try{ $("#civShow").checked = store.get("civShow", true); $("#civRuOn").checked = store.get("civRuOn", true); }catch{}
+$("#civShow").onchange = e => { store.set("civShow", e.target.checked); if(civCur && !civAnsweredNow) $("#civText").classList.toggle("hid", !e.target.checked); };
+$("#civRuOn").onchange = e => { store.set("civRuOn", e.target.checked); $("#civRu").hidden = !e.target.checked; };
+
+// reading and writing: one of three sentences right passes
+const shuffle3 = list => [...list].sort(() => Math.random() - 0.5).slice(0, 3);
+let rd = null, wr = null;
+function rdRound(){ rd = {list: shuffle3(CIV_READ), i: 0, pass: false}; rdShow(); }
+function rdShow(){
+  const t = rd.list[rd.i];
+  $("#rdMeta").textContent = `Предложение ${rd.i + 1} из 3`;
+  $("#rdStat").textContent = rd.pass ? "сдано ✓" : "";
+  $("#rdText").textContent = t; $("#rdHear").dataset.say = t;
+  $("#rdMic").hidden = !canHear(); setLabel($("#rdMic"), RD_MIC[0], RD_MIC);
+  $("#rdOut").classList.remove("err");
+  $("#rdOut").textContent = canHear() ? "" : "Этот браузер не распознаёт речь — прочитайте вслух и сравните с «Как звучит».";
+  $("#rdNextRow").hidden = !!canHear();
+  $("#rdNext").textContent = rd.i < 2 ? "Следующее предложение →" : "Новый раунд";
+}
+$("#rdMic").onclick = async () => {
+  if(listening){ stopListening(true); return; }
+  const t = rd.list[rd.i], btn = $("#rdMic"), out = $("#rdOut");
+  setLabel(btn, RD_MIC[1], RD_MIC);
+  const r = await hearLine(t, btn, out);
+  setLabel(btn, RD_MIC[0], RD_MIC);
+  if(!r) return;
+  const ok = r.pct >= 85;
+  if(ok) rd.pass = true;
+  sessHit("civ");
+  out.innerHTML = `<span class="sc ${scClass(r.pct)}">${r.pct}%</span> ${diffHTML(r.ops)}<br>${ok ? `<b class="okc">✓ Прочитано — тест на чтение сдан.</b>` : rd.i < 2 ? "Не засчитано — попробуйте ещё раз или перейдите к следующему." : "Не засчитано."}`;
+  $("#rdStat").textContent = rd.pass ? "сдано ✓" : "";
+  $("#rdNextRow").hidden = false;
+  $("#rdNext").textContent = ok || rd.i >= 2 ? "Новый раунд" : "Следующее предложение →";
+};
+$("#rdNext").onclick = () => { if(rd.pass || rd.i >= 2) rdRound(); else { rd.i++; rdShow(); } };
+function wrRound(){ wr = {list: shuffle3(CIV_WRITE), i: 0, pass: false}; wrShow(); }
+function wrShow(auto = true){
+  const t = wr.list[wr.i];
+  $("#wrMeta").textContent = `Предложение ${wr.i + 1} из 3`;
+  $("#wrStat").textContent = wr.pass ? "сдано ✓" : "";
+  $("#wrHear").dataset.say = t;
+  $("#wrIn").value = ""; $("#wrIn").disabled = false; $("#wrCheck").disabled = false;
+  $("#wrOut").textContent = ""; $("#wrNextRow").hidden = true;
+  if(auto){ stopSpeech(); setTimeout(() => $("#wrHear").click(), 120); }
+  if(!isPhone()) setTimeout(() => $("#wrIn").focus(), 150);
+}
+const wrNorm = t => spNorm(t).replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(Boolean).join(" ");
+$("#wrForm").onsubmit = e => {
+  e.preventDefault();
+  const t = wr.list[wr.i], v = $("#wrIn").value.trim();
+  if(!v){ $("#wrIn").focus(); return; }
+  const ok = wrNorm(v) === wrNorm(t);
+  if(ok) wr.pass = true;
+  sessHit("civ");
+  const d = diff(t, v, false);
+  $("#wrOut").innerHTML = `${ok ? `<b class="okc">✓ Написано верно${wr.pass ? " — тест на письмо сдан" : ""}.</b>` : `<b class="errc">✗ Не засчитано.</b>`}<br>${diffHTML(d.ops)}<br><span class="note">Нужно было: ${esc(t)}</span>`;
+  $("#wrIn").disabled = true; $("#wrCheck").disabled = true;
+  $("#wrStat").textContent = wr.pass ? "сдано ✓" : "";
+  $("#wrNextRow").hidden = false;
+  $("#wrNext").textContent = ok || wr.i >= 2 ? "Новый раунд" : "Следующее предложение →";
+};
+$("#wrNext").onclick = () => { if(wr.pass || wr.i >= 2) wrRound(); else { wr.i++; wrShow(); } };
+
+function civTab(t){
+  document.querySelectorAll("#civTabs button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.t === t)));
+  $("#civQ").hidden = t !== "q"; $("#civR").hidden = t !== "r"; $("#civW").hidden = t !== "w";
+  stopSpeech(); stopListening();
+  if(t === "q" && !civCur) civSetMode(civMode);
+  if(t === "r" && !rd) rdRound();
+  if(t === "w") { if(!wr) wrRound(); else if(!$("#wrIn").disabled) wrShow(false); }
+}
+$("#civTabs").onclick = e => { const b = e.target.closest("button"); if(b) civTab(b.dataset.t); };
+function openCiv(tab = "q"){
+  civPaintMine(); $("#civSet").value = store.get("civSet", "all");
+  $("#civOpts").hidden = true; $("#civOptsBtn").setAttribute("aria-expanded", "false");
+  civPaintProg();
+  $("#civSheet").showModal();
+  civCur = null; civEx = null; civMode = "learn";
+  document.querySelectorAll("#civMode button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.m === "learn")));
+  civTab(tab);
+}
+$("#civEntry").onclick = () => openCiv();
+$("#civClose").onclick = () => $("#civSheet").close();
+$("#civSheet").addEventListener("close", () => { stopSpeech(); stopListening(); civRefresh(); paintGoal(); });
+civInit = true; civRefresh();
+
 /* ---------- toast ---------- */
 let toastEl;
 function showToast(msg, action, ms = 4500){
@@ -2282,7 +2561,7 @@ if("serviceWorker" in navigator && location.protocol === "https:"){
 }
 
 /* ---------- account & sync (Firebase, like Pip's Sky Islands) ---------- */
-const PREF_KEYS = ["level", "topic", "custom", "rate", "voiceA", "voiceB", "accent", "goal", "target"];
+const PREF_KEYS = ["level", "topic", "custom", "rate", "voiceA", "voiceB", "accent", "goal", "target", "civMine", "civSet"];
 function snapshot(){
   const prefs = {};
   for(const k of PREF_KEYS){ const v = store.get(k, null); if(v !== null) prefs[k] = v; }
@@ -2290,7 +2569,7 @@ function snapshot(){
     prefs, prefsTs: store.get("prefsTs", 0),
     tr: { queue: store.get("trQueue", null), idx: store.get("trIdx", 0) }, trTs: store.get("trTs", 0),
     history: store.get("history", []), mistakes: store.get("mistakes", []),
-    dialogs: store.get("genDialogs", []), rev: store.get("rev", {}), days: store.get("days", {}), words: store.get("words", {}), gone: store.get("gone", []), cleared: store.get("cleared", 0),
+    dialogs: store.get("genDialogs", []), rev: store.get("rev", {}), days: store.get("days", {}), words: store.get("words", {}), civ: store.get("civ", {}), gone: store.get("gone", []), cleared: store.get("cleared", 0),
   }, {});
 }
 function applySnapshot(x){
@@ -2302,6 +2581,7 @@ function applySnapshot(x){
   store.set("rev", x.rev || {});
   store.set("days", x.days || {});
   store.set("words", x.words || {});
+  store.set("civ", x.civ || {});
   store.set("gone", x.gone || []);
   if(x.tr && x.tr.queue && x.tr.queue.length){ store.set("trQueue", x.tr.queue); store.set("trIdx", x.tr.idx || 0); store.set("trTs", x.trTs); }
   // show the new values
@@ -2323,7 +2603,7 @@ function applySnapshot(x){
     if($("#trResult").hidden) renderTr();
   }
   if(state.view === "stats") renderStats();
-  addWords(); paintBadge(); paintToday(); paintGoal();
+  addWords(); paintBadge(); paintToday(); paintGoal(); if(civInit) civRefresh();
   if(state.view === "rev" && rpos >= rq.length) revEmpty();
 }
 

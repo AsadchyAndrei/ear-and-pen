@@ -93,6 +93,8 @@
 
     <p class="note claudehint" id="dClaude" hidden><svg class="lk" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg><span class="ct"></span></p>
 
+    <button class="civentry" id="civEntry" type="button" aria-haspopup="dialog" hidden><span class="ce-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></svg></span><span class="ce-txt"><b>Тест на гражданство USCIS</b><span class="note" id="civEntrySub">128 вопросов, чтение и письмо — как на интервью</span></span><span class="ce-go" aria-hidden="true">→</span></button>
+
     <div class="row modes">
       <div class="seg mode" id="modeSeg" role="group" aria-label="Режим">
         <button type="button" data-m="write" aria-pressed="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3-8 8H2.5v-3z"/></svg>Писать</button><button type="button" data-m="speak" aria-pressed="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="5.5" y="1.75" width="5" height="8" rx="2.5"/><path d="M3.25 7.5a4.75 4.75 0 0 0 9.5 0M8 12.25v2"/></svg>Говорить</button>
@@ -286,6 +288,74 @@
     <label class="field"><span class="lbl">Дата</span><input type="date" id="goalDate"></label>
     <div class="goaldetail" id="goalDetail" hidden></div>
     <div class="row"><button class="btn primary" id="goalSave" type="button">Сохранить</button><button class="btn ghost" id="goalRemove" type="button" hidden>Убрать цель</button></div>
+  </div>
+</dialog>
+
+<dialog class="sheet tall civsheet" id="civSheet" aria-labelledby="civTitle">
+  <div class="sheet-in">
+    <div class="row spread"><h2 id="civTitle">Тест на гражданство</h2><button class="btn ghost" id="civClose" type="button" aria-label="Закрыть">✕</button></div>
+    <div class="seg civtabs" id="civTabs" role="group" aria-label="Часть теста"><button type="button" data-t="q" aria-pressed="true">Вопросы</button><button type="button" data-t="r" aria-pressed="false">Чтение</button><button type="button" data-t="w" aria-pressed="false">Письмо</button></div>
+
+    <div class="civpane" id="civQ">
+      <div class="civtop">
+        <div class="civprog"><div class="row spread"><span><b id="civKnown">0</b> <span class="note" id="civKnownOf">из 128 знаю</span></span><button class="btn ghost sq" id="civOptsBtn" type="button" aria-expanded="false" aria-controls="civOpts" aria-label="Настройки теста"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button></div><div class="meter"><i id="civMeter"></i></div><p class="note civhint" id="civHint">Вопрос выучен, когда вы ответили на него верно 2 раза подряд.</p></div>
+        <div class="seg civmode" id="civMode" role="group" aria-label="Режим"><button type="button" data-m="learn" aria-pressed="true">Тренировка</button><button type="button" data-m="exam" aria-pressed="false">Экзамен</button></div>
+      </div>
+
+      <div class="civopts" id="civOpts" hidden>
+        <label class="field"><span class="lbl">Вопросы</span><select id="civSet"><option value="all">Все 128 (версия 2025)</option><option value="6520">Только 20 со звёздочкой — льгота 65/20</option></select></label>
+        <label class="row note"><input type="checkbox" id="civShow" checked><span>показывать текст вопроса (на интервью вопрос только звучит)</span></label>
+        <label class="row note"><input type="checkbox" id="civRuOn" checked><span>показывать перевод</span></label>
+        <div class="civstate">
+          <b>Мой штат</b> <span class="note">— для 4 вопросов про ваш штат (сенатор, представитель, губернатор, столица)</span>
+          <label class="field"><span class="lbl">Штат</span><select id="civSt"><option value="">— выберите —</option></select></label>
+          <label class="field"><span class="lbl">Сенаторы (оба)</span><input type="text" id="civSen" placeholder="Например: Alex Padilla, Adam Schiff" autocomplete="off"></label>
+          <label class="field"><span class="lbl">Ваш представитель в Конгрессе</span><input type="text" id="civRep" placeholder="Имя и фамилия" autocomplete="off"></label>
+          <label class="field"><span class="lbl">Губернатор</span><input type="text" id="civGov" placeholder="Имя и фамилия" autocomplete="off"></label>
+          <p class="note">Узнать: <a href="https://www.senate.gov/senators/senators-contact.htm" target="_blank" rel="noopener">сенаторы</a> · <a href="https://www.house.gov/representatives/find-your-representative" target="_blank" rel="noopener">представитель по индексу</a> · <a href="https://www.usa.gov/states-and-territories" target="_blank" rel="noopener">губернатор</a>. Называйте тех, кто в должности в день интервью.</p>
+        </div>
+      </div>
+
+      <div class="civcard" id="civCard">
+        <div class="civmeta"><span id="civMeta"></span><span class="civstat" id="civStat"></span></div>
+        <div class="civq"><button class="btn icon say" id="civPlay" type="button" aria-label="Прослушать вопрос"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg></button><p id="civText"></p></div>
+        <p class="civru" id="civRu"></p>
+        <p class="note civneed" id="civNeed" hidden></p>
+        <div class="civans" id="civAns">
+          <button class="btn primary civmic" id="civMic" type="button" aria-pressed="false"></button>
+          <form class="civtype" id="civForm" autocomplete="off"><input type="text" id="civIn" placeholder="или напишите ответ по-английски" autocapitalize="off" spellcheck="false" aria-label="Ваш ответ"><button class="btn" id="civCheck" type="submit">Проверить</button></form>
+          <button class="btn ghost" id="civIdk" type="button">Не знаю — показать ответ</button>
+        </div>
+        <p class="note civout" id="civOut" aria-live="polite"></p>
+        <div class="civres" id="civRes" hidden></div>
+        <div class="row civnext" id="civNextRow" hidden><button class="btn primary" id="civNext" type="button">Следующий вопрос →</button></div>
+      </div>
+      <div class="civsum" id="civSum" hidden></div>
+    </div>
+
+    <div class="civpane" id="civR" hidden>
+      <p class="note">Офицер показывает предложение — прочитайте его вслух. Чтобы сдать, достаточно правильно прочитать одно из трёх. Все слова — из официального списка USCIS.</p>
+      <div class="civcard">
+        <div class="civmeta"><span id="rdMeta"></span><span class="civstat" id="rdStat"></span></div>
+        <p class="civsent" id="rdText"></p>
+        <div class="row"><button class="btn primary civmic" id="rdMic" type="button" aria-pressed="false"></button><button class="btn say" id="rdHear" type="button" data-say="">Как звучит</button></div>
+        <p class="note civout" id="rdOut" aria-live="polite"></p>
+        <div class="row civnext" id="rdNextRow" hidden><button class="btn primary" id="rdNext" type="button">Дальше →</button></div>
+      </div>
+    </div>
+
+    <div class="civpane" id="civW" hidden>
+      <p class="note">Офицер диктует предложение — напишите его. Чтобы сдать, достаточно правильно написать одно из трёх. На интервью пишут от руки, здесь — на клавиатуре.</p>
+      <div class="civcard">
+        <div class="civmeta"><span id="wrMeta"></span><span class="civstat" id="wrStat"></span></div>
+        <div class="row"><button class="btn say" id="wrHear" type="button" data-say=""><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>Прослушать</button></div>
+        <form class="civtype" id="wrForm" autocomplete="off"><input type="text" id="wrIn" placeholder="Напишите, что услышали" autocapitalize="sentences" spellcheck="false" aria-label="Предложение"><button class="btn primary" id="wrCheck" type="submit">Проверить</button></form>
+        <p class="note civout" id="wrOut" aria-live="polite"></p>
+        <div class="row civnext" id="wrNextRow" hidden><button class="btn primary" id="wrNext" type="button">Дальше →</button></div>
+      </div>
+    </div>
+
+    <p class="note civsrc">Вопросы и ответы — официальные, USCIS, версия 2025 года: для тех, кто подал N-400 с 20 октября 2025. Подали раньше — у вас тест 2008 года (100 вопросов). Ответы про президента, вице-президента, спикера и председателя Верховного суда — по <a href="https://www.uscis.gov/citizenship/testupdates" target="_blank" rel="noopener">uscis.gov/citizenship/testupdates</a>.</p>
   </div>
 </dialog>
 
