@@ -1,7 +1,7 @@
 // Ear & Pen — the whole app: dictation, translation, progress, voice, phone layout, install, sync.
 import { PROMPTS, JSON_TASKS } from "../prompts.js";
 import { TOPICS, topicById, DIALOGS, SENTENCES } from "../content.js";
-import { CIVICS, CIV_SECTIONS, CIV_ALIASES, CIV_READ, CIV_WRITE, US_STATES } from "../civics.js";
+import { CIVICS, CIV_SECTIONS, CIV_ALIASES, CIV_ANS_RU, CIV_READ, CIV_WRITE, US_STATES } from "../civics.js";
 import { API_URL, FIREBASE } from "../config.js";
 import { merge, same } from "./merge.js";
 import { grade as civGrade } from "./civmatch.js";
@@ -2165,7 +2165,7 @@ async function reportStatus(force){
 
 /* ---------- citizenship test (USCIS): civics questions, reading, writing ---------- */
 var civInit = false;
-const CIV = CIVICS.map(([n, en, ru, answers, f = ""]) => ({n, en, ru, official: answers, answers: [...answers, ...(CIV_ALIASES[n] || [])], star: f.includes("*"), state: f.includes("S"), need: Number(f.replace(/\D/g, "")) || 1}));
+const CIV = CIVICS.map(([n, en, ru, answers, f = ""]) => ({n, en, ru, official: answers, officialRu: CIV_ANS_RU[n] || [], answers: [...answers, ...(CIV_ALIASES[n] || [])], star: f.includes("*"), state: f.includes("S"), need: Number(f.replace(/\D/g, "")) || 1}));
 const civSec = n => [...CIV_SECTIONS].reverse().find(s => n >= s.from);
 const civLog = () => store.get("civ", {}) || {};
 const civMine = () => store.get("civMine", {}) || {};
@@ -2179,7 +2179,7 @@ function civQ(q){
   const names = s => String(s || "").split(/[,;]|\band\b/).map(x => x.trim()).filter(Boolean);
   const full = q.n === 23 ? names(m.sen) : q.n === 29 ? names(m.rep) : q.n === 61 ? names(m.gov) : q.n === 62 && st ? [st[2]] : [];
   const answers = full.flatMap(x => { const p = x.split(/\s+/); return p.length > 1 ? [x, p[p.length - 1]] : [x]; });
-  return {...q, official: full, answers};
+  return {...q, official: full, officialRu: [], answers};
 }
 const civReady = q => !q.state || civQ(q).answers.length > 0;
 function civStats(){
@@ -2193,6 +2193,7 @@ function civMark(n, ok){
   log[n] = r; store.set("civ", log); cloudDirty();
 }
 let civMode = "learn", civCur = null, civRecent = [], civEx = null, civAnsweredNow = false;
+const RU_LBL = ["Перевод вопроса", "Скрыть перевод"];
 const CIV_MIC = [`${MIC_I}<span>Ответить голосом</span>`, `${STOP_I}<span>Готово</span>`];
 const RD_MIC = [`${MIC_I}<span>Прочитать вслух</span>`, `${STOP_I}<span>Готово</span>`];
 const canHear = () => !!(SR || serverSTT());
@@ -2233,7 +2234,9 @@ function civShow(q){
   $("#civText").classList.toggle("hid", !$("#civShow").checked);
   $("#civText").title = $("#civShow").checked ? "" : "Текст скрыт — как на интервью. Нажмите, чтобы показать.";
   $("#civPlay").dataset.say = q.en;
-  $("#civRu").textContent = q.ru; $("#civRu").hidden = !$("#civRuOn").checked;
+  const always = $("#civRuOn").checked;
+  $("#civRu").textContent = q.ru; $("#civRu").hidden = !always;
+  $("#civRuBtn").hidden = always; $("#civRuBtn").setAttribute("aria-expanded", "false"); setLabel($("#civRuBtn"), "Перевод вопроса", RU_LBL);
   const ready = civReady(q);
   $("#civNeed").hidden = q.need < 2 && ready;
   $("#civNeed").innerHTML = !ready ? `Это вопрос про ваш штат. <button class="btn ghost" type="button" id="civToState">Указать мой штат</button>` : `Нужно назвать ${q.need}.`;
@@ -2263,7 +2266,7 @@ function civAnswer(alts, idk){
   civMark(q.n, best.ok);
   sessHit("civ");
   const hit = new Set(best.hits);
-  const list = q.official.map(a => `<li class="${hit.has(a) ? "hit" : ""}">${playBtn(civSpeakable(a))}<span>${esc(a)}</span></li>`);
+  const list = q.official.map((a, k) => `<li class="${hit.has(a) ? "hit" : ""}">${playBtn(civSpeakable(a))}<span>${esc(a)}${q.officialRu[k] ? `<small class="civtr" lang="ru">${esc(q.officialRu[k])}</small>` : ""}</span></li>`);
   const shown = list.length > 8 ? list.slice(0, 8).join("") + `<li class="more"><details><summary>ещё ${list.length - 8}</summary><ul class="civlist">${list.slice(8).join("")}</ul></details></li>` : list.join("");
   $("#civRes").innerHTML = `<div class="civverdict ${best.ok ? "ok" : idk ? "idk" : "bad"}">${best.ok ? "✓ Засчитано" : idk ? "Запомните ответ" : "✗ Не засчитано"}</div>
     ${!idk && best.heard ? `<p class="note">Ваш ответ: «${esc(best.heard)}»${!best.ok && q.need > 1 && best.count ? ` — назвали ${best.count} из ${q.need}` : ""}</p>` : ""}
@@ -2343,9 +2346,10 @@ const civSaveMine = () => {
 };
 ["#civSt", "#civSen", "#civRep", "#civGov"].forEach(s => $(s).addEventListener("change", civSaveMine));
 $("#civSet").onchange = e => { setPref("civSet", e.target.value); civPaintProg(); civRefresh(); civSetMode(civMode); };
-try{ $("#civShow").checked = store.get("civShow", true); $("#civRuOn").checked = store.get("civRuOn", true); }catch{}
+try{ $("#civShow").checked = store.get("civShow", true); $("#civRuOn").checked = store.get("civRuAlways", false); }catch{}
 $("#civShow").onchange = e => { store.set("civShow", e.target.checked); if(civCur && !civAnsweredNow) $("#civText").classList.toggle("hid", !e.target.checked); };
-$("#civRuOn").onchange = e => { store.set("civRuOn", e.target.checked); $("#civRu").hidden = !e.target.checked; };
+$("#civRuOn").onchange = e => { store.set("civRuAlways", e.target.checked); $("#civRu").hidden = !e.target.checked; $("#civRuBtn").hidden = e.target.checked; };
+$("#civRuBtn").onclick = () => { const open = $("#civRu").hidden; $("#civRu").hidden = !open; $("#civRuBtn").setAttribute("aria-expanded", String(open)); setLabel($("#civRuBtn"), open ? "Скрыть перевод" : "Перевод вопроса", RU_LBL); };
 
 // reading and writing: one of three sentences right passes
 const shuffle3 = list => [...list].sort(() => Math.random() - 0.5).slice(0, 3);

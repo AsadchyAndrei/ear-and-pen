@@ -610,3 +610,7 @@ body.has-sess{padding-bottom:110px}
 .civlist li{align-items:flex-start}
 .civlist li > .btn, .civq > .btn{flex:none;width:36px;height:36px;min-width:36px;min-height:36px;padding:0}
 .civlist li > span{padding-top:6px;min-width:0;flex:1}
+.civlist .civtr{display:block;font-weight:400;font-size:14px;color:var(--muted);margin-top:1px}
+.civlist li.hit .civtr{color:var(--muted);font-weight:400}
+.civrubtn{align-self:flex-start;min-height:32px;padding:4px 10px;font-size:14px;margin:-4px 0 -2px}
+.civrubtn .stk{display:inline-grid}

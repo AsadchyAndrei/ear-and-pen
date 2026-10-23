@@ -305,7 +305,7 @@
       <div class="civopts" id="civOpts" hidden>
         <label class="field"><span class="lbl">Вопросы</span><select id="civSet"><option value="all">Все 128 (версия 2025)</option><option value="6520">Только 20 со звёздочкой — льгота 65/20</option></select></label>
         <label class="row note"><input type="checkbox" id="civShow" checked><span>показывать текст вопроса (на интервью вопрос только звучит)</span></label>
-        <label class="row note"><input type="checkbox" id="civRuOn" checked><span>показывать перевод</span></label>
+        <label class="row note"><input type="checkbox" id="civRuOn"><span>всегда показывать перевод вопроса</span></label>
         <div class="civstate">
           <b>Мой штат</b> <span class="note">— для 4 вопросов про ваш штат (сенатор, представитель, губернатор, столица)</span>
           <label class="field"><span class="lbl">Штат</span><select id="civSt"><option value="">— выберите —</option></select></label>
@@ -319,7 +319,8 @@
       <div class="civcard" id="civCard">
         <div class="civmeta"><span id="civMeta"></span><span class="civstat" id="civStat"></span></div>
         <div class="civq"><button class="btn icon say" id="civPlay" type="button" aria-label="Прослушать вопрос"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg></button><p id="civText"></p></div>
-        <p class="civru" id="civRu"></p>
+        <button class="btn ghost civrubtn" id="civRuBtn" type="button" aria-expanded="false">Перевод вопроса</button>
+        <p class="civru" id="civRu" hidden></p>
         <p class="note civneed" id="civNeed" hidden></p>
         <div class="civans" id="civAns">
           <button class="btn primary civmic" id="civMic" type="button" aria-pressed="false"></button>
