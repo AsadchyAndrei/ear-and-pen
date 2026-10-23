@@ -135,14 +135,21 @@ async function stt(request, url, env, headers, ip) {
   if (!(await useQuota(env.AUDIO, me.uid, "stt", Number(env.STT_DAILY_LIMIT || 400)))) return json({ error: "daily_limit" }, 429, headers);
   let bin = "";
   for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
-  const res = await fetch("https://speech.googleapis.com/v1/speech:recognize", {
+  const content = btoa(bin);
+  const ask = channels => fetch("https://speech.googleapis.com/v1/speech:recognize", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Goog-Api-Key": String(env.GOOGLE_TTS_KEY).trim() },
     body: JSON.stringify({
-      config: { ...enc, languageCode: l, maxAlternatives: 5, enableAutomaticPunctuation: true, model, ...(model === "phone_call" || model === "video" ? { useEnhanced: true } : {}) },
-      audio: { content: btoa(bin) },
+      config: { ...enc, ...(channels ? { audioChannelCount: channels } : {}), languageCode: l, maxAlternatives: 5, enableAutomaticPunctuation: true, model, ...(model === "phone_call" || model === "video" ? { useEnhanced: true } : {}) },
+      audio: { content },
     }),
   });
+  let res = await ask(0);
+  // a WebM/Ogg recording can be stereo: Google then wants the channel count stated
+  if (res.status === 400 && enc.encoding !== "LINEAR16") {
+    const txt = await res.clone().text();
+    if (/audio_channel_count/i.test(txt)) res = await ask(2);
+  }
   if (!res.ok) {
     let info = {};
     try { info = (await res.json()).error || {}; } catch {}
