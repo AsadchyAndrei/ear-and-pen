@@ -58,12 +58,22 @@ export function allowedEmail(claims, list) {
 }
 
 // Daily count per person in KV (best effort: KV is eventually consistent, good enough for a soft cap).
+// Daily limits per person. The KV store allows only so many writes a day (1000 on the free plan),
+// so the count is written every 5th use (kept in memory in between), and a KV failure never blocks the person.
+const memQuota = new Map();
 export async function useQuota(kv, uid, kind, limit) {
   if (!kv || !(limit > 0)) return true;
   const day = new Date().toISOString().slice(0, 10);
   const key = `quota:${day}:${kind}:${uid}`;
-  const n = Number(await kv.get(key)) || 0;
+  let stored = 0;
+  try { stored = Number(await kv.get(key)) || 0; } catch (e) { console.log("quota get", String(e)); }
+  const mem = memQuota.get(key) || 0;
+  const n = Math.max(stored, mem);
   if (n >= limit) return false;
-  await kv.put(key, String(n + 1), { expirationTtl: 2 * 86400 });
+  if (memQuota.size > 5000) memQuota.clear();
+  memQuota.set(key, n + 1);
+  if ((n + 1) % 5 === 0 || n + 1 >= limit || stored === 0) {
+    try { await kv.put(key, String(n + 1), { expirationTtl: 2 * 86400 }); } catch (e) { console.log("quota put", String(e)); }
+  }
   return true;
 }

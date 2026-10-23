@@ -219,7 +219,7 @@ export default {
         const st = { goalDay: typeof body.goalDay === "string" ? body.goalDay.slice(0, 10) : "", dues,
           goal: { d: Math.max(0, Math.min(9, Number(g.d) || 0)), t: Math.max(0, Math.min(50, Number(g.t) || 0)), r: !!g.r },
           streak: Math.max(0, Math.min(10000, Number(body.streak) || 0)), at: Date.now() };
-        await kv.put("status:" + me.uid, JSON.stringify(st));
+        try { await kv.put("status:" + me.uid, JSON.stringify(st)); } catch (e) { console.log("status put", String(e)); return json({ ok: false, error: "store_busy" }, 200, headers); }
         return json({ ok: true }, 200, headers);
       }
       if (url.pathname === "/push/test" && request.method === "POST") {
