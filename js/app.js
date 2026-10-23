@@ -223,7 +223,7 @@ function playBlob(blob){
     const done = () => { player.onended = player.onerror = null; URL.revokeObjectURL(src); if(playing && playing.res === res) playing = null; res(); };
     playing = { res: done };
     player.onended = player.onerror = done;
-    player.src = src;
+    player.src = src; player.playbackRate = 1;
     player.play().catch(done);
   });
 }
@@ -357,7 +357,7 @@ function paintEyebrow(){
 }
 function renderDialog(){
   const d = dialogs[dIdx];
-  stopSpeech(); stopListening(); dChecked = false; dRecorded = false; sBest = []; sRecorded = false;
+  stopSpeech(); stopListening(); dChecked = false; dRecorded = false; sBest = []; sRecorded = false; mine = [];
   $("#view-dict").classList.remove("checked");
   paintEyebrow();
   $("#dTitle").textContent = d.title;
@@ -372,7 +372,7 @@ function renderDialog(){
         <button class="btn play" type="button" title="Прослушать" aria-label="Прослушать строку ${i+1}">${PLAY_I}</button>
         <button class="btn slow" type="button" title="Медленно" aria-label="Медленно, строка ${i+1}">${TURTLE}</button>
       </div>
-      ${speakMode ? `<div class="sayrow"><span class="txt" lang="en">${esc(l.text)}</span><span class="txt-h">Текст скрыт — повторите на слух</span><button class="btn mic" type="button" title="Сказать" aria-label="Сказать строку ${i+1}" aria-pressed="false"${SR ? "" : " disabled"}>${MIC_I}</button></div>` : `<input type="text" id="dl-${dIdx}-${i}" aria-label="Строка ${i+1}, ${esc(who)}: что вы услышали" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" lang="en" enterkeyhint="${i === d.lines.length - 1 ? "done" : "next"}" placeholder="Строка ${i+1}…">`}
+      ${speakMode ? `<div class="sayrow"><span class="txt" lang="en">${esc(l.text)}</span><span class="txt-h">Текст скрыт — повторите на слух</span><button class="btn mic" type="button" title="Сказать" aria-label="Сказать строку ${i+1}" aria-pressed="false"${SR || CAN_REC ? "" : " disabled"}>${MIC_I}</button></div>` : `<input type="text" id="dl-${dIdx}-${i}" aria-label="Строка ${i+1}, ${esc(who)}: что вы услышали" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" lang="en" enterkeyhint="${i === d.lines.length - 1 ? "done" : "next"}" placeholder="Строка ${i+1}…">`}
     </div>`; }).join("");
   paintSpeakDone();
   $("#dSummary").hidden = $("#dExplainWrap").hidden = $("#dVocabWrap").hidden = $("#dPartial").hidden = true;
@@ -604,6 +604,75 @@ $("#dGen").onclick = async () => {
 };
 
 
+
+/* ---------- your own voice: record each try and play it next to the speaker ---------- */
+const CAN_REC = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+let mine = [], recFails = 0, soloRec = null;
+async function startRec(){
+  const stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}});
+  const type = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm", "audio/ogg"].find(t => MediaRecorder.isTypeSupported?.(t)) || "";
+  const mr = new MediaRecorder(stream, type ? {mimeType: type} : undefined), chunks = [];
+  mr.ondataavailable = e => { if(e.data?.size) chunks.push(e.data); };
+  const done = new Promise(res => { mr.onstop = () => { stream.getTracks().forEach(t => t.stop()); res(chunks.length ? new Blob(chunks, {type: mr.mimeType || type || "audio/webm"}) : null); }; });
+  mr.start();
+  const guard = setTimeout(() => { if(mr.state !== "inactive") mr.stop(); }, 20000);
+  return { stop(){ clearTimeout(guard); if(mr.state !== "inactive") mr.stop(); return done; } };
+}
+// record without recognition (no speech recognition here, or it clashes with recording): tap to start, tap to stop
+async function recordOnly(i, btn, out){
+  stopSpeech();
+  let rec;
+  try{ rec = await startRec(); }catch(e){ out.classList.add("err"); out.textContent = e?.name === "NotAllowedError" ? SR_ERR["not-allowed"] : "Не получилось включить микрофон."; return; }
+  out.classList.remove("err"); out.textContent = "Идёт запись — скажите фразу и нажмите ещё раз.";
+  btn.classList.add("on", "rec-on"); btn.setAttribute("aria-pressed", "true");
+  const row = btn.closest(".line"); row?.classList.add("listening");
+  soloRec = rec;
+  const blob = await new Promise(res => { soloRec = { stop: () => { soloRec = null; rec.stop().then(res); } }; });
+  btn.classList.remove("on", "rec-on"); btn.setAttribute("aria-pressed", "false"); row?.classList.remove("listening");
+  out.textContent = blob ? "" : "Запись пустая — попробуйте ещё раз.";
+  if(blob && i >= 0){ setMine(i, blob); paintMine(i); playMine(i, "both"); }
+  return blob;
+}
+function setMine(i, blob){ mine[i] = blob; }
+const ME_I = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="8" cy="5.5" r="2.7"/><path d="M2.8 14c.6-2.8 2.7-4.3 5.2-4.3s4.6 1.5 5.2 4.3"/></svg>`;
+const BOTH_I = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h9l-2.5-2.5M13 11H4l2.5 2.5"/></svg>`;
+// buttons under a line: the speaker, me, one after the other (and a separate recorder where needed)
+function paintMine(i){
+  const row = $(`.line[data-i="${i}"]`); if(!row) return;
+  let box = row.querySelector(".mine");
+  const solo = SR && CAN_REC && $("#sRec").checked && store.get("recSolo", false);
+  if(!mine[i] && !solo){ box?.remove(); return; }
+  if(!box){ box = document.createElement("div"); box.className = "mine"; row.append(box); }
+  box.innerHTML = `<button class="btn" type="button" data-pm="ref">${PLAY_I}Диктор</button>`
+    + (mine[i] ? `<button class="btn" type="button" data-pm="me">${ME_I}Я</button><button class="btn" type="button" data-pm="both">${BOTH_I}По очереди</button>` : "")
+    + (solo ? `<button class="btn" type="button" data-pm="rec">● ${mine[i] ? "Записать заново" : "Записать себя"}</button>` : "");
+}
+async function playMine(i, what){
+  const d = dialogs[dIdx], l = d.lines[i]; if(!l) return;
+  stopSpeech(); const tok = speakToken;
+  const row = $(`.line[data-i="${i}"]`), mark = k => row?.querySelectorAll("[data-pm]").forEach(b => b.classList.toggle("on", b.dataset.pm === k));
+  if(what === "ref" || what === "both"){ mark("ref"); await speak(l.text, l.s); }
+  if(tok !== speakToken){ mark(""); return; }
+  if(what === "both") await new Promise(r => setTimeout(r, 350));
+  if((what === "me" || what === "both") && mine[i] && tok === speakToken){ mark("me"); await playBlob(mine[i]); }
+  if(tok === speakToken) mark("");
+}
+$("#lines").addEventListener("click", async e => {
+  const b = e.target.closest("[data-pm]"); if(!b) return;
+  const row = b.closest(".line"), i = +row.dataset.i;
+  if(b.dataset.pm === "rec"){
+    if(soloRec){ soloRec.stop(); return; }
+    let heard = row.querySelector(".heard");
+    if(!heard){ heard = document.createElement("div"); heard.className = "heard"; heard.setAttribute("aria-live", "polite"); row.append(heard); }
+    b.classList.add("rec-on"); b.textContent = "■ Стоп";
+    await recordOnly(i, b, heard);
+    return;
+  }
+  playMine(i, b.dataset.pm);
+});
+$("#sRec").checked = store.get("sRec", true);
+$("#sRec").onchange = e => { store.set("sRec", e.target.checked); if(e.target.checked) store.set("recSolo", false); };
+
 /* ---------- your own text: paste English, it becomes a dictation ---------- */
 const NO_SPLIT = new Set("mr mrs ms dr st jr sr vs etc e.g i.e u.s u.k no fig approx inc ltd co corp dept ave blvd rd mt ft lb oz jan feb mar apr jun jul aug sep sept oct nov dec mon tue wed thu fri sat sun".split(" "));
 // sentences, with abbreviations like Dr. and a.m. kept inside
@@ -831,11 +900,20 @@ async function sayInto(text, btn, out){
 }
 async function sayLine(i){
   if(listening){ stopListening(true); return; }
+  if(soloRec){ soloRec.stop(); return; }
   const d = dialogs[dIdx], row = $(`.line[data-i="${i}"]`); if(!row) return;
   setCur(i);
   let heard = row.querySelector(".heard");
   if(!heard){ heard = document.createElement("div"); heard.className = "heard"; heard.setAttribute("aria-live", "polite"); row.append(heard); }
+  // no recognition here: just record yourself and compare
+  if(!SR){ await recordOnly(i, row.querySelector(".mic"), heard); return; }
+  const withRec = $("#sRec").checked && CAN_REC && !store.get("recSolo", false);
+  const rec = withRec ? await startRec().catch(() => null) : null;
   const r = await hearLine(d.lines[i].text, row.querySelector(".mic"), heard);
+  const blob = rec ? await rec.stop() : null;
+  if(blob) setMine(i, blob);
+  // some phones cannot recognise while another recording runs: after two silent tries, record separately
+  if(rec){ if(!r){ recFails++; if(recFails >= 2){ store.set("recSolo", true); recFails = 0; heard.textContent = "На этом устройстве запись мешает распознаванию. Теперь свою речь можно записать отдельной кнопкой «● Записать себя» — попробуйте сказать фразу ещё раз."; paintMine(i); } } else recFails = 0; }
   if(!r) return;
   const prev = sBest[i];
   sBest[i] = {...(prev && prev.pct > r.pct ? prev : r), tries: (prev?.tries || 0) + 1};
@@ -844,6 +922,7 @@ async function sayLine(i){
   const el = document.createElement("div"); el.className = "result";
   el.innerHTML = `<span class="sc ${scClass(r.pct)}">${r.pct}%</span>${diffHTML(r.ops)}${r.pct >= SPEAK_PASS ? `<span class="ok-msg">✓</span>` : ""}${sBest[i].tries > 1 ? `<span class="tries">лучшая попытка: ${sBest[i].pct}%</span>` : ""}`;
   row.insertBefore(el, heard);
+  paintMine(i);
   announce(`${r.pct} процентов. ${r.pct >= SPEAK_PASS ? "Хорошо." : "Попробуйте ещё раз."}`);
   paintSpeakDone();
   if(r.pct >= SPEAK_PASS && i + 1 < d.lines.length){
@@ -894,6 +973,7 @@ function setMode(m){
   $("#view-dict").classList.toggle("speak", m === "speak");
   document.querySelectorAll("#modeSeg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.m === m)));
   $("#sNo").hidden = !!SR;
+  if(!SR && !CAN_REC) $("#sNo").textContent = "Этот браузер не умеет ни распознавать речь, ни записывать звук. Откройте сайт в Chrome, Edge или Safari.";
   renderDialog(); updateBar();
 }
 $("#modeSeg").addEventListener("click", e => { const b = e.target.closest("[data-m]"); if(b && b.dataset.m !== state.dmode) setMode(b.dataset.m); });

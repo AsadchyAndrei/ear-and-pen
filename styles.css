@@ -423,3 +423,10 @@ body.phone #view-dict.speak .line.cur.listening,body.phone #view-dict.speak .lin
 .ownwarn{color:var(--miss)}
 .pkown{justify-content:flex-start;border-style:dashed}
 body.phone .ownbtn{display:none}
+/* ---------- your recording next to the speaker ---------- */
+.mine{grid-column:3;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.mine .btn{min-height:34px;padding:4px 12px;font-size:14px;gap:6px}
+.mine .btn svg{width:13px;height:13px}
+.mine .btn.on{background:var(--accent-soft);border-color:var(--accent)}
+.mine .rec-on{background:var(--err);border-color:var(--err);color:#fff}
+body.phone #view-dict.speak .mine{grid-column:1/-1}
