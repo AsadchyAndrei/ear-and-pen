@@ -121,6 +121,12 @@ export default {
     const { ok, headers } = cors(origin, env);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
     const url = new URL(request.url);
+    // the site asks once after sign-in whether this person may use Claude, so it can show locks instead of errors
+    if (request.method === "GET" && url.pathname === "/me") {
+      if (!ok || !origin) return json({ error: "origin_not_allowed" }, 403, headers);
+      const me = await who(request, env);
+      return json({ allowed: !me.error, reason: me.error || null }, 200, { ...headers, "Cache-Control": "no-store" });
+    }
     if (request.method === "GET" && url.pathname === "/tts") {
       if (!ok || !origin) return json({ error: "origin_not_allowed" }, 403, headers);
       return tts(request, url, env, ctx, headers, request.headers.get("CF-Connecting-IP") || "?");

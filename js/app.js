@@ -19,7 +19,7 @@ const errCopy = e => ({
   rate_limited:"Слишком много запросов. Подождите минуту и попробуйте снова.", session_expired:"Сессия истекла — войдите в Claude заново.",
   invalid_json:"Ответ пришёл в неожиданном виде. Нажмите ещё раз.", refused:"Claude не стал отвечать на этот запрос. Измените текст.",
   not_configured:"Сервер Claude ещё не настроен (нет ключа API).", no_credit:"На балансе Anthropic API закончились деньги — пополните его в консоли Anthropic (Billing).", bad_key:"Сервер не принял ключ Anthropic API — проверьте ключ в настройках Cloudflare.", network:"Нет связи с сервером. Проверьте интернет и попробуйте снова.",
-  sign_in_required:"Проверка и разбор от Claude доступны после входа. Нажмите «Войти» вверху страницы.",
+  sign_in_required:"Проверка и разбор от Claude доступны после входа.",
   not_allowed:"У этого аккаунта пока нет доступа к Claude. Встроенные диалоги и сверка с эталоном работают и без него.",
   daily_limit:"Дневной лимит на сегодня исчерпан. Продолжим завтра.",
   token_expired:"Вход устарел. Выйдите и войдите снова.", bad_token:"Вход не подтвердился. Выйдите и войдите снова.",
@@ -33,6 +33,39 @@ async function authHeaders(force = false){
   }catch{}
   return {};
 }
+// Who may use Claude here: "ok", "guest" (not signed in), "no" (signed in, not on the list), "none" (no server).
+// The server decides for real; this only shapes the buttons so nobody taps into an error.
+let access = inClaude ? "ok" : API_URL ? "guest" : "none";
+const canAI = () => access === "ok";
+const LOCK = `<svg class="lk" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg>`;
+const paidBtn = (id, label) => `<button class="btn primary" id="${id}" type="button" data-paid>${LOCK}<span class="gl">${label}</span></button>`;
+function paintAccess(){
+  const locked = !canAI();
+  const tip = access === "guest" ? "Доступно после входа" : access === "no" ? "У этого аккаунта нет доступа к Claude" : access === "none" ? "Недоступно на этом сайте" : "";
+  document.querySelectorAll("[data-paid]").forEach(b => {
+    if(b.id === "trCheck") return;
+    b.toggleAttribute("data-locked", locked); b.title = tip;
+  });
+  const gl = $("#trCheck .gl"); if(gl) gl.textContent = locked ? "Сверить с эталоном" : "Проверить";
+}
+function needAccess(what){
+  if(canAI()) return true;
+  if(access === "guest" && cloud){ openAcct(`${what} — после входа.`); return false; }
+  showToast(access === "no" ? errCopy({code: "not_allowed"}) : access === "guest" ? "Вход ещё загружается — попробуйте через секунду." : NO_AI);
+  return false;
+}
+async function refreshAccess(){
+  if(inClaude || !API_URL) return;
+  if(!user){ access = "guest"; paintAccess(); acctUI(); return; }
+  try{
+    const r = await fetch(API_URL.replace(/\/$/, "") + "/me", { headers: await authHeaders() });
+    const j = await r.json();
+    access = j.allowed ? "ok" : j.reason === "not_allowed" ? "no" : j.reason === "sign_in_required" ? "guest" : "ok";
+  }catch{ access = "ok"; } // offline or a hiccup: let the server decide when a button is used
+  paintAccess(); acctUI();
+}
+const live = $("#live");
+function announce(msg){ live.textContent = ""; setTimeout(() => { live.textContent = msg; }, 60); }
 // ai(task, params, {onText, signal}) → parsed JSON for JSON tasks, text otherwise
 async function ai(task, params, opts = {}){
   const prompt = PROMPTS[task](params);
@@ -54,7 +87,8 @@ async function ai(task, params, opts = {}){
   let body = await res.json().catch(() => ({}));
   if(body.error === "token_expired"){ res = await call(true); body = await res.json().catch(() => ({})); }
   if(!res.ok){
-    if(body.error === "sign_in_required" && cloud) setTimeout(() => $("#acctBtn").click(), 0);
+    if(body.error === "sign_in_required"){ access = "guest"; paintAccess(); if(cloud) setTimeout(() => openAcct("Проверка и разбор от Claude — после входа."), 0); }
+    if(body.error === "not_allowed"){ access = "no"; paintAccess(); }
     throw {code: body.error || "upstream_error"};
   }
   if(JSON_TASKS.includes(task)) return body.data;
@@ -62,7 +96,7 @@ async function ai(task, params, opts = {}){
   return body.text;
 }
 
-/* ---------- prefs ---------- */
+/* ---------- prefs: level and topic live in one sheet, shown as a chip next to "new dialogue" ---------- */
 const state = {
   level: store.get("level","B1"), topic: store.get("topic","Повседневные ситуации"), custom: store.get("custom",""),
   rate: store.get("rate",0.85), voiceA: store.get("voiceA",""), voiceB: store.get("voiceB",""), view: "dict"
@@ -73,16 +107,32 @@ $("#topicCustom").value = state.custom;
 $("#customWrap").hidden = $("#topic").value !== "__custom";
 const topicText = () => $("#topic").value === "__custom" ? ($("#topicCustom").value.trim() || "everyday life") : $("#topic").value;
 function setPref(k, v){ state[k] = v; store.set(k, v); store.set("prefsTs", Date.now()); cloudDirty(); }
-$("#level").onchange = e => setPref("level", e.target.value);
-$("#topic").onchange = e => { setPref("topic", e.target.value); $("#customWrap").hidden = state.topic !== "__custom"; if(!$("#customWrap").hidden) $("#topicCustom").focus(); };
-$("#topicCustom").oninput = e => setPref("custom", e.target.value);
+const shortTopic = () => {
+  if($("#topic").value !== "__custom") return $("#topic").value.split(/[ :]/)[0];
+  const t = $("#topicCustom").value.trim() || "своя тема";
+  return t.length > 18 ? t.slice(0, 17) + "…" : t;
+};
+function paintSet(){ document.querySelectorAll(".setlbl").forEach(el => { el.innerHTML = `<span>${esc(state.level)}</span><span class="sl-tp"> · ${esc(shortTopic())}</span>`; }); }
+$("#level").onchange = e => { setPref("level", e.target.value); paintSet(); jumpToLevel(); };
+$("#topic").onchange = e => { setPref("topic", e.target.value); $("#customWrap").hidden = state.topic !== "__custom"; if(!$("#customWrap").hidden) $("#topicCustom").focus(); paintSet(); };
+$("#topicCustom").oninput = e => { setPref("custom", e.target.value); paintSet(); };
+document.addEventListener("click", e => { if(e.target.closest("[data-set]")) $("#setSheet").showModal(); });
+$("#setClose").onclick = $("#setDone").onclick = () => $("#setSheet").close();
+paintSet();
 
 /* ---------- tabs ---------- */
+const TABS = ["dict", "tr", "stats"];
 document.querySelectorAll("nav.tabs button").forEach(b => b.onclick = () => showView(b.dataset.view));
+$("nav.tabs").addEventListener("keydown", e => {
+  const i = TABS.indexOf(state.view);
+  const to = e.key === "ArrowRight" ? TABS[(i + 1) % 3] : e.key === "ArrowLeft" ? TABS[(i + 2) % 3] : e.key === "Home" ? TABS[0] : e.key === "End" ? TABS[2] : null;
+  if(!to) return;
+  e.preventDefault(); showView(to); $("#tab-" + to).focus();
+});
 function showView(v){
   state.view = v;
-  document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.view === v));
-  ["dict","tr","stats"].forEach(x => $("#view-"+x).hidden = x !== v);
+  document.querySelectorAll("nav.tabs button").forEach(b => { const on = b.dataset.view === v; b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; });
+  TABS.forEach(x => $("#view-"+x).hidden = x !== v);
   if(v === "stats") renderStats();
   if(v === "tr" && !isPhone()) setTimeout(() => $("#trIn").focus(), 0);
   stopSpeech();
@@ -181,16 +231,30 @@ function speakBrowser(text, pick, rate){
   });
 }
 let speakToken = 0;
+// a line whose HD audio is still coming shows a spinner on its play button (and on the phone bar)
+let loadT = 0;
+function setLoading(on){
+  clearTimeout(loadT);
+  const apply = f => {
+    document.querySelectorAll(".line.loading").forEach(l => l.classList.remove("loading"));
+    if(f) $(".line.cur")?.classList.add("loading");
+    $("#mbar").classList.toggle("loading", f);
+  };
+  if(on) loadT = setTimeout(() => apply(true), 150); else apply(false);
+}
 async function speak(text, who = "A", mul = 1){
   const pick = pickFor(who), tok = speakToken;
   if(pick.startsWith("g:") && hdOn){
     const rate = mul < 1 ? (HD_RATES[HD_RATES.indexOf(nearestRate(state.rate)) - 1] || HD_RATES[0]) : nearestRate(state.rate);
     try{
+      setLoading(true);
       const blob = await hdBlob(text, pick.slice(2), rate);
+      setLoading(false);
       if(tok !== speakToken) return;
       await playBlob(blob);
       return;
     }catch(e){
+      setLoading(false);
       if(tok !== speakToken) return;
       if(!hdWarned){ hdWarned = true; showToast(e.code === "tts_not_configured" ? "HD-голоса ещё не подключены — пока звучит голос браузера." : e.code === "sign_in_required" ? "Новые фразы HD-голосом — после входа. Пока звучит голос браузера." : e.code === "not_allowed" ? "HD-голос для новых фраз доступен не всем аккаунтам — звучит голос браузера." : "HD-голос сейчас недоступен — звучит голос браузера."); }
     }
@@ -203,8 +267,18 @@ function prefetch(lines){
   if(!hdOn) return;
   lines.forEach(l => { const pick = pickFor(l.s); if(pick.startsWith("g:")) hdBlob(l.text, pick.slice(2), nearestRate(state.rate)).catch(() => {}); });
 }
+let playingAll = false;
+const PLAY_I = `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>`;
+const PAUSE_I = `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>`;
+const TURTLE = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 10.5h10a5 4.2 0 0 0-10 0z"/><path d="M12.5 9.8c.6-.9 1.4-1.3 2.2-1"/><path d="M4.5 10.5v2M10.5 10.5v2"/></svg>`;
+function paintPlayAll(){
+  const b = $("#dPlayAll"); b.setAttribute("aria-pressed", String(playingAll));
+  b.innerHTML = playingAll ? `${PAUSE_I}<span>Пауза</span>` : `${PLAY_I}<span>Слушать<span class="pl-long"> весь диалог</span></span>`;
+}
 function stopSpeech(){
   speakToken++;
+  setLoading(false);
+  if(playingAll){ playingAll = false; paintPlayAll(); }
   if(synth) synth.cancel();
   try{ player.pause(); }catch{}
   playing?.res();
@@ -290,28 +364,43 @@ const BUILTIN = [
 ];
 let dialogs = [...BUILTIN, ...store.get("genDialogs", [])];
 let dIdx = Math.min(store.get("dIdx", 0), dialogs.length-1);
-let dChecked = false;
+let dChecked = false, dRecorded = false;
+const lvlOf = d => d.level || "B1";
 
+function paintEyebrow(){
+  const d = dialogs[dIdx];
+  $("#dLevel").innerHTML = `Диалог ${dIdx+1} из ${dialogs.length} · <span class="lv">${esc(lvlOf(d))}</span>${d.gen ? " · от Claude" : ""}`;
+  $("#dPrev").disabled = dIdx === 0; $("#dNext").disabled = dIdx === dialogs.length-1;
+}
 function renderDialog(){
   const d = dialogs[dIdx];
-  stopSpeech(); dChecked = false;
-  $("#dLevel").textContent = `${d.level || state.level} · ${dIdx+1} из ${dialogs.length}${d.gen ? " · сгенерирован" : ""}`;
+  stopSpeech(); dChecked = false; dRecorded = false;
+  $("#view-dict").classList.remove("checked");
+  paintEyebrow();
   $("#dTitle").textContent = d.title;
   $("#dContext").textContent = d.context_ru || "";
-  $("#lines").innerHTML = d.lines.map((l,i) => `
+  const sp = d.speakers || {};
+  $("#lines").innerHTML = d.lines.map((l,i) => { const who = sp[l.s] || l.s; return `
     <div class="line" data-i="${i}">
-      <div class="who ${l.s==="B"?"B":""}"><b>${l.s==="B"?"B":"A"}</b>${esc((d.speakers||{})[l.s] || "")}</div>
+      <div class="who ${l.s==="B"?"B":""}"><b aria-hidden="true">${l.s==="B"?"B":"A"}</b><span>${esc(who)}</span><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span></div>
       <div class="ctrls">
-        <button class="btn play" title="Прослушать строку" aria-label="Прослушать строку ${i+1}"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg></button>
-        <button class="btn slow" title="Медленно" aria-label="Медленно строку ${i+1}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.2 1.6"/></svg></button>
+        <button class="btn play" type="button" title="Прослушать" aria-label="Прослушать строку ${i+1}">${PLAY_I}</button>
+        <button class="btn slow" type="button" title="Медленно" aria-label="Медленно, строка ${i+1}">${TURTLE}</button>
       </div>
-      <input type="text" id="dl-${dIdx}-${i}" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" enterkeyhint="${i === d.lines.length - 1 ? "done" : "next"}" placeholder="Строка ${i+1}…">
-    </div>`).join("");
-  $("#dSummary").hidden = $("#dExplainWrap").hidden = $("#dVocabWrap").hidden = true;
-  $("#dPrev").disabled = dIdx === 0; $("#dNext").disabled = dIdx === dialogs.length-1;
+      <input type="text" id="dl-${dIdx}-${i}" aria-label="Строка ${i+1}, ${esc(who)}: что вы услышали" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" lang="en" enterkeyhint="${i === d.lines.length - 1 ? "done" : "next"}" placeholder="Строка ${i+1}…">
+    </div>`; }).join("");
+  $("#dSummary").hidden = $("#dExplainWrap").hidden = $("#dVocabWrap").hidden = $("#dPartial").hidden = true;
   store.set("dIdx", dIdx);
   setCur(0);
   updateBar();
+}
+// a new level in the sheet takes you to a dialogue of that level (unless you are mid-way through this one)
+function jumpToLevel(){
+  if(lvlOf(dialogs[dIdx]) === state.level) return;
+  const typed = [...document.querySelectorAll(".line input")].some(i => i.value.trim());
+  if(typed && !dChecked) return;
+  const at = dialogs.findIndex(x => lvlOf(x) === state.level);
+  if(at >= 0){ dIdx = at; renderDialog(); }
 }
 // the line being worked on (phones control it from the bar above the keyboard)
 let cur = 0;
@@ -351,7 +440,9 @@ $("#lines").addEventListener("focusin", e => {
   }
 });
 $("#dPlayAll").onclick = async () => {
+  if(playingAll){ stopSpeech(); return; }
   const d = dialogs[dIdx]; stopSpeech(); const tok = speakToken;
+  playingAll = true; paintPlayAll();
   prefetch(d.lines);
   for(let i=0;i<d.lines.length;i++){
     if(tok !== speakToken) return;
@@ -359,62 +450,110 @@ $("#dPlayAll").onclick = async () => {
     setCur(i); mediaInfo(d, i);
     await speak(d.lines[i].text, d.lines[i].s);
     row?.classList.remove("playing");
+    if(tok !== speakToken) return;
     await new Promise(r => setTimeout(r, 450));
   }
+  if(tok === speakToken){ playingAll = false; paintPlayAll(); }
 };
-$("#dStop").onclick = stopSpeech;
+paintPlayAll();
 $("#dPrev").onclick = () => { if(dIdx>0){ dIdx--; renderDialog(); } };
 $("#dNext").onclick = () => { if(dIdx<dialogs.length-1){ dIdx++; renderDialog(); } };
 $("#dReset").onclick = renderDialog;
-$("#dReveal").onclick = () => {
-  const d = dialogs[dIdx];
-  document.querySelectorAll(".line").forEach(row => {
-    if(row.querySelector(".reveal, .result")) return;
-    const el = document.createElement("div"); el.className = "reveal"; el.textContent = d.lines[+row.dataset.i].text; row.append(el);
-  });
+// peek at the line you are on (not the whole dialogue); tap again to hide it
+$("#dPeek").onclick = () => {
+  const row = $(`.line[data-i="${cur}"]`); if(!row || row.querySelector(".result")) return;
+  const shown = row.querySelector(".reveal");
+  if(shown){ shown.remove(); return; }
+  const el = document.createElement("div"); el.className = "reveal"; el.textContent = dialogs[dIdx].lines[cur].text; row.append(el);
 };
 
+// why a word was missed — a short, honest reason instead of repeating the whole sentence
+const WEAK = new Set("a an the to for of and or but at in on as can could would should was were is are am be been have has had do does did you your he him her his it its we us they them their that than some there".split(" "));
+function lev(a, b){
+  const m = a.length, n = b.length; if(!m || !n) return m || n;
+  let prev = Array.from({length: n + 1}, (_, j) => j);
+  for(let i = 1; i <= m; i++){ const row = [i]; for(let j = 1; j <= n; j++) row[j] = Math.min(prev[j] + 1, row[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1)); prev = row; }
+  return prev[n];
+}
+function whyMiss(o){
+  const right = norm(o.e || "", false), yours = norm(o.w || "", false);
+  if(/'/.test(o.e || "") || /'/.test(o.w || "")) return "Сокращение: 'd, 'll, 's, 're, n't звучат очень коротко.";
+  if(o.t === "miss") return WEAK.has(right) ? "Пропущено короткое безударное слово — в речи его почти не слышно." : "Слово пропущено.";
+  if(WEAK.has(right)) return "Безударное служебное слово звучит слабо — его легко спутать.";
+  if(lev(yours, right) <= 2) return "Похожие на слух слова.";
+  return "Услышано другое слово.";
+}
+
+const bare = w => String(w || "").replace(/^[^\p{L}\p{N}']+|[^\p{L}\p{N}']+$/gu, "");
 let lastDict = null;
-function checkDictation(){
+function checkDictation(force){
   stopSpeech();
-  const d = dialogs[dIdx], strict = $("#strict").checked;
-  let sum = 0, results = [];
-  document.querySelectorAll(".line").forEach(row => {
-    const i = +row.dataset.i, typed = row.querySelector("input").value;
+  const d = dialogs[dIdx], strict = $("#strict").checked, n = d.lines.length, half = Math.ceil(n / 2);
+  const rows = [...document.querySelectorAll(".line")];
+  const typed = rows.map(r => r.querySelector("input").value);
+  const filled = typed.filter(t => t.trim()).length;
+  if(!filled){ showToast("Сначала напишите хотя бы одну строку."); lineInput(cur)?.focus(); return; }
+  if(!force && filled < half){
+    $("#dPartialTxt").textContent = `Заполнено ${filled} из ${n} строк.`;
+    $("#dPartial").hidden = false;
+    $("#dPartial").scrollIntoView({block: "nearest", behavior: "smooth"});
+    return;
+  }
+  $("#dPartial").hidden = true; $("#intro").hidden = true;
+  const results = [];
+  rows.forEach((row, i) => {
     row.querySelectorAll(".reveal,.result").forEach(x => x.remove());
-    const r = diff(d.lines[i].text, typed, strict); sum += r.pct;
-    results.push({expected:d.lines[i].text, typed, pct:r.pct, ops:r.ops});
     const el = document.createElement("div"); el.className = "result";
-    el.innerHTML = `<span class="sc ${scClass(r.pct)}">${r.pct}%</span>` + (typed.trim() ? diffHTML(r.ops) : `<ins class="w miss">${esc(d.lines[i].text)}</ins>`);
+    if(!typed[i].trim()){
+      el.innerHTML = `<span class="sc skip">не заполнено</span><span class="skipped">${esc(d.lines[i].text)}</span>`;
+    } else {
+      const r = diff(d.lines[i].text, typed[i], strict);
+      results.push({expected: d.lines[i].text, typed: typed[i], pct: r.pct, ops: r.ops});
+      el.innerHTML = `<span class="sc ${scClass(r.pct)}">${r.pct}%</span>` + diffHTML(r.ops);
+    }
     row.append(el);
   });
-  const avg = Math.round(sum / d.lines.length);
-  const wrongs = results.flatMap(r => r.ops.filter(o => o.t === "sub").map(o => ({yours:o.w, better:o.e, why:"Ослышка: «"+r.expected+"»"})));
-  const wasChecked = dChecked; dChecked = true; lastDict = {d, results, avg};
+  const avg = Math.round(results.reduce((k, r) => k + r.pct, 0) / results.length);
+  const errCount = results.reduce((k, r) => k + r.ops.filter(o => o.t !== "eq").length, 0);
+  const skipped = n - results.length, counts = filled >= half;
+  dChecked = true; lastDict = {d, results, avg};
+  $("#view-dict").classList.add("checked");
   updateBar();
-  if(isPhone()) setTimeout(() => $("#dSummary").scrollIntoView({block: "start", behavior: "smooth"}), 100);
-  if(!wasChecked){
+  // one result per dialogue, and only when at least half of it was done
+  if(counts && !dRecorded){
+    dRecorded = true;
     pushResult("dict", avg);
-    saveMistakes(wrongs.slice(0, 12).map(w => ({...w, kind:"dict", type:"listening"})));
+    saveMistakes(results.flatMap(r => r.ops.filter(o => o.t === "sub" || o.t === "miss")
+      .map(o => ({kind: "dict", type: "listening", yours: o.t === "miss" ? "(пропуск)" : bare(o.w), better: bare(o.e), why: whyMiss(o), ctx: r.expected}))).slice(0, 12));
   }
-  const errCount = results.reduce((n,r) => n + r.ops.filter(o => o.t !== "eq").length, 0);
+  const verdict = avg>=95?"Отлично — почти без ошибок.":avg>=80?"Хорошо. Посмотрите на выделенные слова.":avg>=60?"Неплохо, но часть потерялась на слух. Переслушайте строки на 0.7×.":"Сложно на этой скорости. Включите 0.7× и слушайте каждую строку по 2–3 раза.";
   $("#dSummary").hidden = false;
   $("#dSummary").innerHTML = `<div class="summary">
-      <div><div class="big">${avg}%</div><div class="note">точность</div></div>
-      <div style="flex:1;min-width:200px"><p style="margin:0">${avg>=95?"Отлично — почти без ошибок.":avg>=80?"Хорошо. Посмотрите на выделенные слова.":avg>=60?"Неплохо, но многое потерялось на слух. Переслушайте строки на 0.7×.":"Сложно на этой скорости. Включите 0.7× и слушайте каждую строку по 2–3 раза."}</p>
-      <p class="note" style="margin-top:4px">Ошибок и пропусков: ${errCount}. <ins class="w">жёлтым</ins> — правильное слово, <del class="w">красным</del> — что вы написали, <ins class="w miss">пунктиром</ins> — пропущено.</p></div>
-      ${errCount ? `<button class="btn primary" id="dExplainBtn">Разобрать ошибки с Claude</button>` : ""}
+      <div><div class="big">${avg}%</div><div class="note">точность${skipped ? `<br>по ${results.length} из ${n} строк` : ""}</div></div>
+      <div style="flex:1;min-width:200px"><p style="margin:0">${verdict}</p>
+      <p class="note" style="margin-top:4px">${errCount ? `Ошибок и пропусков: ${errCount}. ` : "Ошибок нет. "}${skipped ? `Не заполнено строк: ${skipped}. ` : ""}${counts ? "" : "В статистику не записано — сделано меньше половины. "}<ins class="w">жёлтым</ins> — правильное слово, <del class="w">красным</del> — что вы написали, <ins class="w miss">пунктиром</ins> — пропущено.</p></div>
+      ${errCount ? paidBtn("dExplainBtn", "Разобрать ошибки с Claude") : ""}
     </div>`;
   $("#dExplainBtn") && ($("#dExplainBtn").onclick = explainDictation);
+  paintAccess();
   if(d.vocab?.length){
     $("#dVocabWrap").hidden = false;
-    $("#dVocab").innerHTML = d.vocab.map(v => `<li><b>${esc(v.en)}</b> — ${esc(v.ru)}</li>`).join("");
+    $("#dVocab").innerHTML = d.vocab.map(v => `<li><span><b lang="en">${esc(v.en)}</b> — ${esc(v.ru)}</span>${playBtn(v.en)}</li>`).join("");
   }
+  announce(`Проверено. Точность ${avg} процентов${errCount ? `, ошибок и пропусков ${errCount}` : ", ошибок нет"}.`);
+  if(isPhone()) setTimeout(() => $("#dSummary").scrollIntoView({block: "start", behavior: "smooth"}), 100);
 }
-$("#dCheck").onclick = checkDictation;
+$("#dCheck").onclick = () => checkDictation();
+$("#dPartialYes").onclick = () => checkDictation(true);
+$("#dPartialNo").onclick = () => {
+  $("#dPartial").hidden = true;
+  const empty = [...document.querySelectorAll(".line input")].findIndex(i => !i.value.trim());
+  if(empty >= 0){ lineInput(empty)?.focus(); }
+};
 
 let explainCtl = null;
 async function explainDictation(){
+  if(!needAccess("Разбор ошибок от Claude")) return;
   const out = $("#dExplain"); $("#dExplainWrap").hidden = false;
   const btn = $("#dExplainBtn"); if(btn) btn.disabled = true;
   out.innerHTML = `<span class="status"><span class="spin"></span>Claude разбирает ошибки…</span>`;
@@ -430,7 +569,8 @@ async function explainDictation(){
 $("#dExplainStop").onclick = () => explainCtl?.abort();
 
 $("#dGen").onclick = async () => {
-  const btn = $("#dGen"); btn.disabled = true; const old = btn.textContent; btn.innerHTML = `<span class="spin"></span>Пишу диалог…`;
+  if(!needAccess("Новые диалоги от Claude")) return;
+  const btn = $("#dGen"), gl = btn.querySelector(".gl"); btn.disabled = true; gl.innerHTML = `<span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Пишу диалог…`;
   try{
     const lvl = state.level;
     const data = await ai("dialogue", {level: lvl, topic: topicText(), avoid: dialogs.map(d => d.title).slice(-12).join("; ")});
@@ -443,7 +583,7 @@ $("#dGen").onclick = async () => {
     $(`.line[data-i="0"] input`)?.focus();
   }catch(e){
     showToast(e.code === "unavailable" ? NO_AI : errCopy(e));
-  }finally{ btn.disabled = false; btn.textContent = old; }
+  }finally{ btn.disabled = false; gl.textContent = "Новый диалог"; }
 };
 
 /* ---------- translation ---------- */
@@ -464,33 +604,38 @@ const BANK = [
 let trQueue = store.get("trQueue", null) || shuffle(BANK.slice());
 let trIdx = Math.min(store.get("trIdx", 0), trQueue.length-1);
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+let trRecorded = false;
 function renderTr(){
   const it = trQueue[trIdx];
-  $("#trCounter").textContent = `Предложение ${trIdx+1} из ${trQueue.length}`;
-  $("#trFocus").textContent = it.focus || "Перевод";
+  $("#trCounter").textContent = `Предложение ${trIdx+1} из ${trQueue.length}${it.review ? " · повторение" : ""}`;
+  $("#trFocus").textContent = it.focus || ""; $("#trFocus").hidden = !it.focus;
   $("#trRu").textContent = it.ru;
   $("#trIn").value = store.get("trDraft:"+it.ru, "");
-  $("#trHintText").hidden = true; $("#trHintText").textContent = it.hint_ru || "Подсказки нет.";
+  $("#trHintBox").hidden = true; $("#trHint").setAttribute("aria-expanded", "false");
+  $("#trHintText").textContent = it.hint_ru || "Подсказки нет — попробуйте по смыслу.";
   $("#trResult").hidden = true; $("#trResult").innerHTML = "";
+  $("#trSkip").hidden = false;
+  trRecorded = false;
   store.set("trIdx", trIdx);
 }
 function saveTr(){ store.set("trQueue", trQueue); store.set("trIdx", trIdx); store.set("trTs", Date.now()); cloudDirty(); }
 $("#trIn").addEventListener("input", e => store.set("trDraft:"+trQueue[trIdx].ru, e.target.value));
 $("#trIn").addEventListener("keydown", e => { if(e.key === "Enter" && (e.ctrlKey || e.metaKey)){ e.preventDefault(); checkTr(); } });
-$("#trHint").onclick = () => $("#trHintText").hidden = !$("#trHintText").hidden;
+$("#trHint").onclick = () => { const open = $("#trHintBox").hidden; $("#trHintBox").hidden = !open; $("#trHint").setAttribute("aria-expanded", String(open)); };
 $("#trSkip").onclick = () => { trIdx = (trIdx + 1) % trQueue.length; renderTr(); saveTr(); if(!isPhone()) $("#trIn").focus(); };
 $("#trCheck").onclick = () => checkTr();
 
 $("#trGen").onclick = async () => {
-  const btn = $("#trGen"); btn.disabled = true; const old = btn.textContent; btn.innerHTML = `<span class="spin"></span>Подбираю…`;
+  if(!needAccess("Новые предложения от Claude")) return;
+  const btn = $("#trGen"), gl = btn.querySelector(".gl"); btn.disabled = true; gl.innerHTML = `<span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Подбираю…`;
   try{
     const arr = await ai("sentences", {level: state.level, topic: topicText()});
     const list = (Array.isArray(arr) ? arr : []).filter(x => x && x.ru && x.en).map(x => ({ru:String(x.ru), en:String(x.en), focus:String(x.focus||""), hint_ru:String(x.hint_ru||"")}));
     if(!list.length) throw {code:"invalid_json"};
-    trQueue = list; trIdx = 0; renderTr(); saveTr(); $("#trIn").focus();
+    trQueue = list; trIdx = 0; renderTr(); saveTr(); if(!isPhone()) $("#trIn").focus();
   }catch(e){
     showToast(e.code === "unavailable" ? NO_AI : errCopy(e));
-  }finally{ btn.disabled = false; btn.textContent = old; }
+  }finally{ btn.disabled = false; gl.textContent = "Новые предложения"; }
 };
 
 const playBtn = (text) => `<button class="btn icon say" data-say="${esc(text)}" title="Озвучить" aria-label="Озвучить"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg></button>`;
@@ -501,6 +646,7 @@ async function checkTr(){
   const it = trQueue[trIdx], mine = $("#trIn").value.trim(), box = $("#trResult");
   if(!mine){ $("#trIn").focus(); return; }
   box.hidden = false;
+  if(!canAI()){ localTr(it, mine); return; }
   box.innerHTML = `<span class="status"><span class="spin"></span>Claude проверяет перевод — обычно 10–30 секунд…</span>`;
   $("#trCheck").disabled = true;
   try{
@@ -508,18 +654,36 @@ async function checkTr(){
     const r = await ai("check", {level: state.level, ru: it.ru, en: it.en, mine}, { signal: trCtl.signal });
     if(!r || typeof r !== "object") throw {code:"invalid_json"};
     renderTrResult(it, mine, r);
-    pushResult("tr", Number(r.score) || 0);
-    saveMistakes((r.mistakes || []).map(m => ({kind:"tr", yours:m.yours, better:m.better, why:m.why_ru, type:m.type})));
+    if(!trRecorded){
+      trRecorded = true;
+      pushResult("tr", Number(r.score) || 0);
+      saveMistakes((r.mistakes || []).map(m => ({kind:"tr", yours:m.yours, better:m.better, why:m.why_ru, type:m.type, ru: it.ru, en: r.natural || it.en})));
+    }
+    announce(`Оценка ${Math.round(Number(r.score) || 0)} из 100.`);
   }catch(e){
     if(e.code === "cancelled") return;
-    if(e.code === "unavailable"){
-      const d = diff(it.en, mine, false);
-      box.innerHTML = `<div class="verdict"><div class="big">${d.pct}%</div><div><p><b>Сверка с эталоном.</b> Подробный разбор от Claude ещё не подключён, поэтому сравниваю слово в слово — другие верные варианты тоже могут подсветиться.</p></div></div>
-        <div class="ver natural"><span class="eyebrow">Эталон</span><div class="row"><span class="en" style="flex:1;min-width:0">${esc(it.en)}</span>${playBtn(it.en)}</div></div>
-        <div class="ver"><span class="eyebrow">Отличия</span><div style="font-family:var(--f-mono);font-size:14px;line-height:1.9">${diffHTML(d.ops)}</div></div>`;
-      pushResult("tr", d.pct);
-    } else box.innerHTML = `<p class="err-msg">${esc(errCopy(e))}</p>`;
+    if(["unavailable", "sign_in_required", "not_allowed"].includes(e.code)) localTr(it, mine);
+    else box.innerHTML = `<p class="err-msg">${esc(errCopy(e))}</p>`;
   }finally{ $("#trCheck").disabled = false; }
+}
+// without Claude: compare with the reference word by word
+function localTr(it, mine){
+  const d = diff(it.en, mine, false);
+  const why = access === "guest" ? "Подробный разбор от Claude — после входа." : access === "no" ? "У этого аккаунта нет доступа к разбору от Claude." : "Разбор от Claude сейчас недоступен.";
+  $("#trResult").hidden = false;
+  $("#trResult").innerHTML = `<div style="display:flex;flex-direction:column;gap:12px">
+    <div class="verdict"><div class="big">${d.pct}%</div><div><p><b>Сверка с эталоном.</b> ${why} Сравниваю слово в слово, поэтому другие верные варианты тоже могут подсветиться.</p></div></div>
+    <div class="ver natural"><span class="eyebrow">Эталон</span><div class="row"><span class="en" lang="en" style="flex:1;min-width:0">${esc(it.en)}</span>${playBtn(it.en)}</div></div>
+    <div class="ver"><span class="eyebrow">Отличия</span><div style="font-family:var(--f-mono);font-size:14px;line-height:1.9">${diffHTML(d.ops)}</div></div>
+    <div class="row"><button class="btn primary" id="trNext" type="button">Следующее предложение →</button><button class="btn" id="trRetry" type="button">Попробовать ещё раз</button></div></div>`;
+  wireTrNext();
+  if(!trRecorded){ trRecorded = true; pushResult("tr", d.pct); }
+  announce(`Совпадение с эталоном ${d.pct} процентов.`);
+}
+function wireTrNext(){
+  $("#trSkip").hidden = true;
+  $("#trNext").onclick = () => $("#trSkip").click();
+  $("#trRetry").onclick = () => { $("#trResult").hidden = true; $("#trSkip").hidden = false; $("#trIn").focus(); };
 }
 function renderTrResult(it, mine, r){
   const score = Math.max(0, Math.min(100, Math.round(Number(r.score) || 0)));
@@ -546,8 +710,7 @@ function renderTrResult(it, mine, r){
       ${r.tip_ru ? `<p style="margin:0"><b>Совет:</b> ${esc(r.tip_ru)}</p>` : ""}
       <div class="row"><button class="btn primary" id="trNext">Следующее предложение →</button><button class="btn" id="trRetry">Попробовать ещё раз</button></div>
     </div>`;
-  $("#trNext").onclick = () => $("#trSkip").click();
-  $("#trRetry").onclick = () => { $("#trResult").hidden = true; $("#trIn").focus(); };
+  wireTrNext();
 }
 
 /* ---------- stats & mistakes ---------- */
@@ -560,22 +723,65 @@ function saveMistakes(list){
   const t = Date.now();
   const m = store.get("mistakes", []); list.forEach((x, i) => m.unshift({...x, t: t + i})); store.set("mistakes", m.slice(0, 300)); cloudDirty();
 }
+const TYPE_RU = {listening:"на слух", grammar:"грамматика", tense:"время", articles:"артикли", prepositions:"предлоги", "word order":"порядок слов", vocabulary:"слова", spelling:"орфография", punctuation:"пунктуация", style:"стиль", meaning:"смысл"};
+const plural = (n, one, few, many) => { const a = n % 10, b = n % 100; return a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many; };
+// older dictation mistakes kept the whole sentence in "why"; show it as context instead
+const ctxOf = x => x.ctx || (x.kind === "dict" && /^Ослышка: «/.test(x.why || "") ? x.why.slice(10, -1) : "");
+const whyOf = x => x.kind === "dict" && /^Ослышка/.test(x.why || "") ? "" : (x.why || "");
+let mShown = [];
 function renderStats(){
   const h = store.get("history", []);
   const part = k => h.filter(x => x.k === k);
   const avg = a => a.length ? Math.round(a.reduce((s,x) => s + x.p, 0) / a.length) : null;
   const d = part("dict"), t = part("tr");
   const week = h.filter(x => Date.now() - x.t < 7*864e5).length;
-  const bars = a => a.slice(-24).map(x => `<span class="${x.p<65?"lo":""}" style="height:${Math.max(4,x.p)}%" title="${x.p}%"></span>`).join("");
   $("#stats").innerHTML = `
-    <div class="stat"><div class="lbl">Диктанты</div><div class="big">${d.length}</div><div class="note">средняя точность ${avg(d) ?? "—"}${avg(d)!=null?"%":""}</div><div class="bars">${bars(d)}</div></div>
-    <div class="stat"><div class="lbl">Переводы</div><div class="big">${t.length}</div><div class="note">средний балл ${avg(t) ?? "—"}</div><div class="bars">${bars(t)}</div></div>
-    <div class="stat"><div class="lbl">За 7 дней</div><div class="big">${week}</div><div class="note">упражнений</div></div>`;
+    <div class="kpi"><div class="lbl">Диктанты</div><div class="big">${d.length}</div><div class="note">${d.length ? `точность ${avg(d)}%` : "пока нет"}</div></div>
+    <div class="kpi"><div class="lbl">Переводы</div><div class="big">${t.length}</div><div class="note">${t.length ? `балл ${avg(t)}/100` : "пока нет"}</div></div>
+    <div class="kpi"><div class="lbl">За 7 дней</div><div class="big">${week}</div><div class="note">${plural(week, "занятие", "занятия", "занятий")}</div></div>`;
+  const bars = (a, label) => `<div><div class="lbl">${label}, последние ${Math.min(24, a.length)}</div><div class="bars" role="img" aria-label="${label}: от ${Math.min(...a.slice(-24).map(x => x.p))} до ${Math.max(...a.slice(-24).map(x => x.p))} процентов">${a.slice(-24).map(x => `<span class="${x.p<65?"lo":""}" style="height:${Math.max(4,x.p)}%" title="${x.p}%"></span>`).join("")}</div></div>`;
+  const trend = [];
+  if(d.length >= 5) trend.push(bars(d, "Диктанты"));
+  if(t.length >= 5) trend.push(bars(t, "Переводы"));
+  $("#trend").className = trend.length ? "trend" : "";
+  $("#trend").innerHTML = trend.join("") || (h.length ? `<p class="note">График появится после пяти занятий одного вида.</p>` : "");
   const f = $("#mFilter").value;
-  const m = store.get("mistakes", []).filter(x => f === "all" || x.kind === f).slice(0, 60);
-  $("#mBody").innerHTML = m.length ? m.map(x => `<tr><td><del class="w">${esc(x.yours)}</del></td><td><ins class="w">${esc(x.better)}</ins></td><td>${x.type ? `<span class="chip">${esc(x.type)}</span> ` : ""}${esc(x.why)}</td></tr>`).join("")
-    : `<tr><td colspan="3" class="empty">Здесь появятся ваши ошибки после первых проверок — по ним удобно повторять.</td></tr>`;
+  mShown = store.get("mistakes", []).filter(x => f === "all" || x.kind === f).slice(0, 60);
+  $("#mList").innerHTML = mShown.length ? mShown.map((x, i) => {
+    const ctx = ctxOf(x), why = whyOf(x);
+    return `<li class="mcard" data-i="${i}">
+      <div class="pair"><del class="w" lang="en">${esc(x.yours)}</del><span aria-hidden="true">→</span><ins class="w" lang="en">${esc(x.better)}</ins>${x.type ? `<span class="chip">${esc(TYPE_RU[x.type] || x.type)}</span>` : ""}</div>
+      ${why ? `<div class="why">${esc(why)}</div>` : ""}
+      ${ctx ? `<div class="ctx"><span lang="en">${esc(ctx)}</span>${playBtn(ctx)}</div>` : x.ru ? `<div class="ctx"><span lang="ru">${esc(x.ru)}</span></div>` : ""}
+      ${ctx ? `<div class="acts"><button class="btn" type="button" data-drill>Повторить на слух</button></div>` : x.ru ? `<div class="acts"><button class="btn" type="button" data-again>Перевести снова</button></div>` : ""}
+    </li>`; }).join("")
+    : `<li class="empty">Здесь появятся ваши ошибки после первых проверок — по ним удобно повторять.</li>`;
 }
+// practise a mistake right here: hear the sentence again and type it, or translate the sentence again
+$("#mList").addEventListener("click", e => {
+  const card = e.target.closest(".mcard"); if(!card) return;
+  const x = mShown[+card.dataset.i]; if(!x) return;
+  const ctx = ctxOf(x);
+  if(e.target.closest("[data-drill]")){
+    const box = document.createElement("div"); box.className = "drill";
+    box.innerHTML = `<input type="text" aria-label="Напишите фразу, которую услышите" placeholder="Напишите, что услышали" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" lang="en">
+      <div class="row"><button class="btn primary" type="button" data-dcheck>Проверить</button><button class="btn" type="button" data-dplay>${PLAY_I}Ещё раз</button></div><div class="out" aria-live="polite"></div>`;
+    card.querySelector(".ctx").hidden = true; card.querySelector(".acts").hidden = true;
+    card.append(box); box.querySelector("input").focus();
+    box.querySelector("input").addEventListener("keydown", k => { if(k.key === "Enter"){ k.preventDefault(); box.querySelector("[data-dcheck]").click(); } });
+    stopSpeech(); speak(ctx, "A");
+  }
+  if(e.target.closest("[data-dplay]")){ stopSpeech(); speak(ctx, "A"); }
+  if(e.target.closest("[data-dcheck]")){
+    const r = diff(ctx, card.querySelector(".drill input").value, false);
+    card.querySelector(".drill .out").innerHTML = `<span class="sc ${scClass(r.pct)}">${r.pct}%</span> ${diffHTML(r.ops)}${r.pct === 100 ? ` <b class="ok-msg">Верно!</b>` : ""}`;
+    card.querySelector(".ctx").hidden = false;
+  }
+  if(e.target.closest("[data-again]")){
+    trQueue.splice(trIdx, 0, {ru: x.ru, en: x.en || x.better, focus: "", hint_ru: [x.better && `Обратите внимание: ${x.better}.`, x.why].filter(Boolean).join(" "), review: true});
+    renderTr(); saveTr(); showView("tr");
+  }
+});
 $("#mFilter").onchange = renderStats;
 $("#mClear").onclick = () => $("#mConfirm").hidden = false;
 $("#mNo").onclick = () => $("#mConfirm").hidden = true;
@@ -584,9 +790,7 @@ $("#mYes").onclick = () => { store.set("history", []); store.set("mistakes", [])
 /* ---------- toast ---------- */
 let toastEl;
 function showToast(msg, action, ms = 4500){
-  if(!toastEl){ toastEl = document.createElement("div"); toastEl.setAttribute("role","status");
-    toastEl.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:15px;max-width:calc(100% - 32px);z-index:30;box-shadow:0 6px 24px rgba(0,0,0,.2);display:flex;align-items:center";
-    document.body.append(toastEl); }
+  if(!toastEl){ toastEl = document.createElement("div"); toastEl.className = "toast"; toastEl.setAttribute("role","status"); document.body.append(toastEl); }
   toastEl.textContent = msg;
   if(action){ const b = document.createElement("button"); b.className = "toastbtn"; b.textContent = action.label; b.onclick = () => { toastEl.hidden = true; action.fn(); }; toastEl.append(b); }
   toastEl.hidden = false; clearTimeout(toastEl._t); if(ms) toastEl._t = setTimeout(() => toastEl.hidden = true, ms);
@@ -595,6 +799,7 @@ function showToast(msg, action, ms = 4500){
 /* ---------- phone layout: bar above the keyboard ---------- */
 function isPhone(){ return matchMedia("(max-width:560px), (pointer:coarse)").matches; }
 function updateBar(){
+  document.body.classList.toggle("phone", isPhone());
   const show = state.view === "dict" && isPhone() && !dChecked;
   $("#mbar").hidden = !show;
   document.body.classList.toggle("has-mbar", show);
@@ -720,15 +925,14 @@ function applySnapshot(x){
     Object.assign(state, x.prefs);
     $("#level").value = state.level; $("#topic").value = state.topic; $("#topicCustom").value = state.custom || "";
     $("#customWrap").hidden = state.topic !== "__custom"; $("#accent").value = state.accent || "en-US";
-    loadVoices(); setRate(state.rate);
+    loadVoices(); setRate(state.rate); paintSet();
   }
   if(!same(before.dialogs, x.dialogs)){
     const keep = dialogs[dIdx];
     dialogs = [...BUILTIN, ...x.dialogs];
     const at = dialogs.findIndex(d => d === keep || (keep.id && d.id === keep.id));
     if(at >= 0) dIdx = at; else { dIdx = Math.min(dIdx, dialogs.length - 1); renderDialog(); }
-    $("#dLevel").textContent = `${dialogs[dIdx].level || state.level} · ${dIdx+1} из ${dialogs.length}${dialogs[dIdx].gen ? " · сгенерирован" : ""}`;
-    $("#dPrev").disabled = dIdx === 0; $("#dNext").disabled = dIdx === dialogs.length-1;
+    paintEyebrow();
   }
   if(!same(before.tr, x.tr) && x.tr && x.tr.queue && x.tr.queue.length){
     trQueue = x.tr.queue; trIdx = Math.min(x.tr.idx || 0, trQueue.length - 1);
@@ -757,10 +961,15 @@ async function syncNow(){
 function acctUI(){
   const b = $("#acctBtn");
   b.classList.toggle("out", !user);
-  $("#acctAv").textContent = user ? ((user.name || user.email || "?").trim()[0] || "?").toUpperCase() : "?";
-  $("#acctName").textContent = user ? (user.name || user.email.split("@")[0] || "Аккаунт") : "Войти";
-  $("#acctSt").textContent = !cloud ? "прогресс только здесь" : !user ? "сохранять в облаке" : syncing ? "синхронизация…" : lastSync ? "синхронизировано" : "в облаке";
+  const name = user ? (user.name || user.email.split("@")[0] || "Аккаунт") : "Войти";
+  const st = !cloud ? "прогресс только здесь" : !user ? "сохранять в облаке" : syncing ? "синхронизация…" : lastSync ? "синхронизировано" : "в облаке";
+  if(user) $("#acctAv").textContent = ((user.name || user.email || "?").trim()[0] || "?").toUpperCase();
+  else $("#acctAv").innerHTML = `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="8" cy="5.5" r="2.8"/><path d="M2.8 14c.6-2.8 2.6-4.3 5.2-4.3s4.6 1.5 5.2 4.3"/></svg>`;
+  $("#acctName").textContent = name; $("#acctSt").textContent = st;
+  b.dataset.sync = !user ? "off" : syncing || !lastSync ? "busy" : "ok";
+  b.setAttribute("aria-label", user ? `Аккаунт: ${name}, ${st}` : "Войти и сохранять прогресс в облаке");
   $("#acctOut").hidden = !!user; $("#acctIn").hidden = !user;
+  $("#accessInfo").textContent = !user ? "" : access === "ok" ? "Проверка и разбор от Claude включены." : access === "no" ? "У этого аккаунта нет доступа к Claude: работают встроенные диалоги, уже озвученные фразы и сверка с эталоном." : "";
   if(user){
     $("#acctEmail").textContent = user.email || user.name;
     $("#syncInfo").textContent = lastSync ? `Последняя синхронизация: ${new Date(lastSync).toLocaleTimeString("ru-RU", {hour: "2-digit", minute: "2-digit"})}. Прогресс, ошибки, ваши диалоги и настройки одинаковы на всех устройствах.` : "Синхронизация…";
@@ -784,10 +993,12 @@ function acctMsg(err, ok){
   $("#acctErr").hidden = !err; $("#acctErr").textContent = err || "";
   $("#acctOk").hidden = !ok; $("#acctOk").textContent = ok || "";
 }
-$("#acctBtn").onclick = () => {
+function openAcct(why){
   if(!cloud){ showToast(FIREBASE ? "Вход загружается…" : "Вход и синхронизация скоро появятся."); return; }
-  acctMsg(); acctUI(); $("#acctSheet").showModal();
-};
+  $("#acctWhy").hidden = !why; $("#acctWhy").textContent = why || "";
+  acctMsg(); acctUI(); if(!$("#acctSheet").open) $("#acctSheet").showModal();
+}
+$("#acctBtn").onclick = () => openAcct("");
 $("#acctClose").onclick = () => $("#acctSheet").close();
 const busy = async (btn, fn) => { btn.disabled = true; acctMsg(); try{ await fn(); }catch(e){ acctMsg(authCopy(e)); } finally{ btn.disabled = false; } };
 $("#gSignIn").onclick = () => busy($("#gSignIn"), () => cloud.signInGoogle());
@@ -807,6 +1018,7 @@ async function bootCloud(){
   cloud.redirect.then(r => { if(r && r.code && authCopy(r)){ acctMsg(authCopy(r)); $("#acctSheet").showModal(); } });
   cloud.onAuth(u => {
     user = u; unwatch?.(); unwatch = null;
+    refreshAccess();
     if(u){
       if($("#acctSheet").open) $("#acctSheet").close();
       syncNow().then(() => {
@@ -824,6 +1036,9 @@ async function bootCloud(){
 
 if(!synth) showToast("Этот браузер не умеет озвучивать текст. Откройте страницу в Chrome или Safari.");
 renderDialog(); renderTr();
+paintAccess();
+if(!store.get("introSeen", false)) $("#intro").hidden = false;
+$("#introClose").onclick = () => { $("#intro").hidden = true; store.set("introSeen", true); };
 netState();
 bootCloud();
 }
