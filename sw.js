@@ -3,9 +3,9 @@
    the saved copy opens right away. Fonts and the Firebase library: saved and served from the cache, so the app
    looks the same offline. Claude and the voice server go straight to the network (voice audio is kept by the app itself).
    A new version waits until the person taps "Обновить" (the app sends "skip"). */
-const V = 'ep-v8', RT = 'ep-rt-v1';
+const V = 'ep-v9', RT = 'ep-rt-v1';
 const CORE = ['./', 'index.html', 'styles.css', 'js/app.js', 'js/merge.js', 'js/cloud.js', 'prompts.js', 'content.js', 'config.js',
-  'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
+  'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon.svg', 'icons/badge-96.png', 'favicon.ico'];
 const FONT_CSS = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Source+Sans+3:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap';
 
 async function saveFonts() {
@@ -70,7 +70,7 @@ self.addEventListener('push', e => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (x) { d = { body: e.data && e.data.text() }; }
   e.waitUntil(self.registration.showNotification(d.title || 'Ear & Pen', {
-    body: d.body || '', icon: 'icons/icon-192.png', tag: d.tag || 'ep', renotify: false, data: { url: d.url || './' }
+    body: d.body || '', icon: 'icons/icon-192.png', badge: 'icons/badge-96.png', tag: d.tag || 'ep', renotify: false, data: { url: d.url || './' }
   }));
 });
 self.addEventListener('notificationclick', e => {
