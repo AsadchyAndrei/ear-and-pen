@@ -115,6 +115,7 @@ async function tts(request, url, env, ctx, headers, ip) {
    POST /stt?l=<en-US|en-GB>  body: 16-bit PCM, 16 kHz, mono (one spoken phrase) → {alts: [...]}
    The same Google key as the voice (it must also allow the Speech-to-Text API). */
 const sttHits = new Map();
+const STT_MODELS = new Set(["latest_long", "latest_short", "default", "command_and_search", "video", "phone_call"]);
 const MAX_STT = 16000 * 2 * 20; // 20 seconds
 async function stt(request, url, env, headers, ip) {
   if (!env.GOOGLE_TTS_KEY) return json({ error: "stt_not_configured" }, 503, headers);
@@ -125,6 +126,7 @@ async function stt(request, url, env, headers, ip) {
   else if (++h.n > Number(env.STT_PER_MINUTE || 30)) return json({ error: "rate_limited" }, 429, headers);
   const l = url.searchParams.get("l") || "en-US";
   if (!TTS_LOCALES.has(l)) return json({ error: "bad_request" }, 400, headers);
+  const model = STT_MODELS.has(url.searchParams.get("m")) ? url.searchParams.get("m") : (env.STT_MODEL || "latest_long");
   const buf = new Uint8Array(await request.arrayBuffer());
   if (buf.length < 3200 || buf.length > MAX_STT) return json({ error: buf.length < 3200 ? "too_short" : "too_large" }, 400, headers);
   if (!(await useQuota(env.AUDIO, me.uid, "stt", Number(env.STT_DAILY_LIMIT || 400)))) return json({ error: "daily_limit" }, 429, headers);
@@ -134,7 +136,7 @@ async function stt(request, url, env, headers, ip) {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Goog-Api-Key": String(env.GOOGLE_TTS_KEY).trim() },
     body: JSON.stringify({
-      config: { encoding: "LINEAR16", sampleRateHertz: 16000, languageCode: l, maxAlternatives: 5, enableAutomaticPunctuation: true, model: "latest_short" },
+      config: { encoding: "LINEAR16", sampleRateHertz: 16000, languageCode: l, maxAlternatives: 5, enableAutomaticPunctuation: true, model, ...(model === "phone_call" || model === "video" ? { useEnhanced: true } : {}) },
       audio: { content: btoa(bin) },
     }),
   });
