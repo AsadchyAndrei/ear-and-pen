@@ -51,7 +51,7 @@
 
 Ключ браузера Firebase ограничен сайтами (Google Cloud → проект `ear-and-pen` → APIs & Services → Credentials → «Browser key»: `https://earandpen.net/*`, `https://www.earandpen.net/*`, `https://ear-and-pen.firebaseapp.com/*`). Для запуска на новом адресе (например, `localhost`) его нужно добавить туда же.
 
-Расходы на озвучку: в Google Cloud Billing (платёжный аккаунт проекта `pip-sky-islands`, где ключ TTS) есть бюджет «Ear & Pen — Text-to-Speech» на $5 в месяц с письмами на 50, 90 и 100%.
+Расходы на озвучку и распознавание: в Google Cloud Billing (платёжный аккаунт проекта `pip-sky-islands`, где ключ `ear-and-pen-tts`) есть бюджет «Ear & Pen — Text-to-Speech + Speech-to-Text» на $5 в месяц с письмами на 50, 90 и 100%. Ключ разрешает два API: Cloud Text-to-Speech и Cloud Speech-to-Text. Модель распознавания — `default` (`STT_MODEL`), лимиты — `STT_DAILY_LIMIT`, `STT_PER_MINUTE`.
 
 Превью ссылки в мессенджерах — `og.png` (1200×630) и теги Open Graph в `index.html`.
 
