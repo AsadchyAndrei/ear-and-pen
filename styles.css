@@ -58,6 +58,30 @@ select{padding-right:28px}
 .acct-txt{display:flex;flex-direction:column;line-height:1.2}
 .acct .st{font-size:13px;color:var(--muted);font-weight:500}
 
+/* today: progress ring + streak */
+.today{display:inline-flex;align-items:center;gap:4px;height:44px;padding:0 12px 0 6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;cursor:pointer;font-weight:700;font-variant-numeric:tabular-nums;color:var(--fg);position:relative}
+.today .ring{width:32px;height:32px;transform:rotate(-90deg)}
+.today .ring circle{fill:none;stroke-width:3.5}
+.ring-bg{stroke:var(--sunk)}
+.ring-fg{stroke:var(--accent);stroke-linecap:round;stroke-dasharray:0 100;transition:stroke-dasharray .4s}
+.today.met .ring-fg{stroke:var(--ok)}
+.today .flame{position:absolute;left:14px;top:50%;width:14px;height:14px;transform:translateY(-50%);fill:var(--muted)}
+.today.met .flame,.today.lit .flame{fill:#E8742C}
+.goals{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.goals li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--r);background:var(--sunk)}
+.goals li b{font-variant-numeric:tabular-nums}
+.goals li.done{background:var(--ok-soft)}
+.goals li.done b{color:var(--ok)}
+.goals .btn{min-height:34px;padding:4px 10px;font-size:14px}
+.streakline{margin:0;font-size:15px}
+.setblock{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px}
+.stepper{display:flex;justify-content:space-between;align-items:center}
+.stepper b{min-width:28px;text-align:center;font-size:18px;font-variant-numeric:tabular-nums}
+.stepper .btn.sq{width:40px;min-height:40px;font-size:18px}
+.checkline{gap:8px;align-items:center}
+.checkline input[type=checkbox]{width:20px;height:20px}
+.checkline input[type=time]{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg)}
+
 /* ---------- tabs ---------- */
 nav.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
 nav.tabs button{background:none;border:0;padding:11px 16px;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1px;cursor:pointer;white-space:nowrap;min-height:44px}
@@ -267,6 +291,7 @@ body.has-mbar{padding-bottom:calc(88px + env(safe-area-inset-bottom, 0px))}
   .acct-txt{display:none}
   #installBtn span{display:none}
   #installBtn{width:44px;padding:0;min-height:44px}
+  .top-actions{gap:6px}
   /* tabs stay in reach while scrolling */
   nav.tabs{position:sticky;top:env(safe-area-inset-top, 0px);z-index:12;background:var(--bg);
     margin:0 calc(-1 * max(16px, env(safe-area-inset-right, 0px))) 0 calc(-1 * max(16px, env(safe-area-inset-left, 0px)));

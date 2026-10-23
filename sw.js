@@ -3,7 +3,7 @@
    the saved copy opens right away. Fonts and the Firebase library: saved and served from the cache, so the app
    looks the same offline. Claude and the voice server go straight to the network (voice audio is kept by the app itself).
    A new version waits until the person taps "Обновить" (the app sends "skip"). */
-const V = 'ep-v6', RT = 'ep-rt-v1';
+const V = 'ep-v7', RT = 'ep-rt-v1';
 const CORE = ['./', 'index.html', 'styles.css', 'js/app.js', 'js/merge.js', 'js/cloud.js', 'prompts.js', 'config.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
 const FONT_CSS = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Source+Sans+3:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap';
@@ -63,4 +63,22 @@ self.addEventListener('fetch', e => {
       return res;
     }))));
   }
+});
+
+/* daily practice reminders (sent by the Ear & Pen server) */
+self.addEventListener('push', e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (x) { d = { body: e.data && e.data.text() }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Ear & Pen', {
+    body: d.body || '', icon: 'icons/icon-192.png', tag: d.tag || 'ep', renotify: false, data: { url: d.url || './' }
+  }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || './', self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const w = list.find(c => new URL(c.url).origin === location.origin);
+    if (w) return w.focus().then(c => c && c.navigate ? c.navigate(url).catch(() => c) : c);
+    return self.clients.openWindow(url);
+  }));
 });

@@ -8,6 +8,7 @@
 //   mistakes  saved mistakes                — union of both devices
 //   dialogs   dialogues written by Claude   — union of both devices
 //   rev       review schedule per card      — per card, the latest review wins (last)
+//   days      days the daily goal was met   — union of both devices (for the streak)
 //   cleared   "clear history" time          — anything older is dropped everywhere
 
 export const SYNC_V = 1;
@@ -46,6 +47,13 @@ export function merge(a, b) {
       if (!rev[k] || (r.last || 0) > (rev[k].last || 0)) rev[k] = r;
     }
   }
+  const days = {};
+  for (const src of [a.days, b.days]) {
+    for (const [k, t] of Object.entries(src || {})) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || !(t > cleared)) continue;
+      days[k] = Math.max(days[k] || 0, t);
+    }
+  }
   return {
     v: SYNC_V,
     prefs: prefSrc.prefs || {},
@@ -56,6 +64,7 @@ export function merge(a, b) {
     mistakes,
     dialogs,
     rev,
+    days,
     cleared,
   };
 }

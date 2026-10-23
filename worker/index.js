@@ -3,6 +3,7 @@
 // and builds the prompt itself from prompts.js, so the API key can't be used as a general proxy.
 import { PROMPTS, JSON_TASKS } from "../prompts.js";
 import { verifyIdToken, allowedEmail, useQuota } from "./auth.js";
+import { vapidKeys, sendPush, runReminders, reminderText, deviceId } from "./push.js";
 
 const MAX_BODY = 12_000;
 const hits = new Map(); // ip -> [timestamps], best-effort per isolate
@@ -14,7 +15,7 @@ function cors(origin, env) {
     ok,
     headers: {
       "Access-Control-Allow-Origin": ok ? origin || "*" : "null",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
       "Vary": "Origin",
     },
@@ -116,6 +117,10 @@ function parseJSON(text) {
 }
 
 export default {
+  // every 15 minutes (see wrangler.toml): daily practice reminders
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runReminders(env).then(r => console.log("reminders", JSON.stringify(r))).catch(e => console.log("reminders failed", String(e))));
+  },
   async fetch(request, env, ctx) {
     const origin = request.headers.get("Origin") || "";
     const { ok, headers } = cors(origin, env);
@@ -127,6 +132,62 @@ export default {
       const me = await who(request, env);
       return json({ allowed: !me.error, reason: me.error || null }, 200, { ...headers, "Cache-Control": "no-store" });
     }
+    // ---------- reminders ----------
+    if (url.pathname === "/vapid" && request.method === "GET") {
+      if (!ok || !origin) return json({ error: "origin_not_allowed" }, 403, headers);
+      if (!env.AUDIO) return json({ error: "push_unavailable" }, 503, headers);
+      return json({ key: (await vapidKeys(env.AUDIO)).pub }, 200, headers);
+    }
+    if (url.pathname.startsWith("/push")) {
+      if (!ok || !origin) return json({ error: "origin_not_allowed" }, 403, headers);
+      if (!env.AUDIO) return json({ error: "push_unavailable" }, 503, headers);
+      const me = await who(request, env);
+      if (me.error) return json({ error: me.error }, me.status, headers);
+      let body = {};
+      if (request.method !== "GET") {
+        const raw = await request.text();
+        if (raw.length > 20000) return json({ error: "too_large" }, 413, headers);
+        try { body = raw ? JSON.parse(raw) : {}; } catch { return json({ error: "bad_request" }, 400, headers); }
+      }
+      const kv = env.AUDIO;
+      if (url.pathname === "/push" && request.method === "POST") {
+        const sub = body.sub;
+        if (!sub || typeof sub.endpoint !== "string" || !/^https:\/\//.test(sub.endpoint) || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) return json({ error: "bad_request" }, 400, headers);
+        const time = /^([01]\d|2[0-3]):[0-5]\d$/.test(body.time || "") ? body.time : "19:00";
+        const tz = typeof body.tz === "string" && body.tz.length < 64 ? body.tz : "UTC";
+        await kv.put(`push:${me.uid}:${await deviceId(sub.endpoint)}`, JSON.stringify({ sub: { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } }, time, tz, at: Date.now() }));
+        return json({ ok: true, time, tz }, 200, headers);
+      }
+      if (url.pathname === "/push" && request.method === "DELETE") {
+        if (typeof body.endpoint === "string") await kv.delete(`push:${me.uid}:${await deviceId(body.endpoint)}`);
+        return json({ ok: true }, 200, headers);
+      }
+      if (url.pathname === "/push/status" && request.method === "POST") {
+        const dues = (Array.isArray(body.dues) ? body.dues : []).filter(n => Number.isFinite(n)).slice(0, 500);
+        const g = body.goal || {};
+        const st = { goalDay: typeof body.goalDay === "string" ? body.goalDay.slice(0, 10) : "", dues,
+          goal: { d: Math.max(0, Math.min(9, Number(g.d) || 0)), t: Math.max(0, Math.min(50, Number(g.t) || 0)), r: !!g.r },
+          streak: Math.max(0, Math.min(10000, Number(body.streak) || 0)), at: Date.now() };
+        await kv.put("status:" + me.uid, JSON.stringify(st));
+        return json({ ok: true }, 200, headers);
+      }
+      if (url.pathname === "/push/test" && request.method === "POST") {
+        const v = await vapidKeys(kv);
+        const st = await kv.get("status:" + me.uid, "json");
+        const list = await kv.list({ prefix: `push:${me.uid}:` });
+        let sent = 0;
+        for (const { name } of list.keys) {
+          const rec = await kv.get(name, "json"); if (!rec) continue;
+          const msg = { ...reminderText(st), title: "Напоминания включены", tag: "test" };
+          const status = await sendPush(rec.sub, msg, v).catch(() => 0);
+          if (status === 404 || status === 410) await kv.delete(name);
+          else if (status >= 200 && status < 300) sent++;
+        }
+        return json({ ok: sent > 0, sent }, 200, headers);
+      }
+      return json({ error: "not_found" }, 404, headers);
+    }
+
     if (request.method === "GET" && url.pathname === "/tts") {
       if (!ok || !origin) return json({ error: "origin_not_allowed" }, 403, headers);
       return tts(request, url, env, ctx, headers, request.headers.get("CF-Connecting-IP") || "?");

@@ -23,3 +23,7 @@ TTS_DAILY_LIMIT = "600"
 # Voice audio is made once per sentence and kept here (Wrangler creates the namespace on first deploy).
 [[kv_namespaces]]
 binding = "AUDIO"
+
+# daily practice reminders: checked every 15 minutes
+[triggers]
+crons = ["*/15 * * * *"]

@@ -719,6 +719,7 @@ function renderTrResult(it, mine, r){
 /* ---------- stats & mistakes ---------- */
 function pushResult(kind, pct){
   const h = store.get("history", []); h.push({k:kind, p:Math.round(pct), t:Date.now()}); store.set("history", h.slice(-500)); cloudDirty();
+  setTimeout(checkGoal, 0);
   try{ navigator.storage?.persist?.(); }catch{}
 }
 function saveMistakes(list){
@@ -737,11 +738,11 @@ function renderStats(){
   const part = k => h.filter(x => x.k === k);
   const avg = a => a.length ? Math.round(a.reduce((s,x) => s + x.p, 0) / a.length) : null;
   const d = part("dict"), t = part("tr");
-  const week = h.filter(x => Date.now() - x.t < 7*864e5).length;
+  const sk = streakInfo();
   $("#stats").innerHTML = `
     <div class="kpi"><div class="lbl">Диктанты</div><div class="big">${d.length}</div><div class="note">${d.length ? `точность ${avg(d)}%` : "пока нет"}</div></div>
     <div class="kpi"><div class="lbl">Переводы</div><div class="big">${t.length}</div><div class="note">${t.length ? `балл ${avg(t)}/100` : "пока нет"}</div></div>
-    <div class="kpi"><div class="lbl">За 7 дней</div><div class="big">${week}</div><div class="note">${plural(week, "занятие", "занятия", "занятий")}</div></div>`;
+    <div class="kpi"><div class="lbl">Серия</div><div class="big">${sk.n}</div><div class="note">${plural(sk.n, "день", "дня", "дней")}${sk.best > sk.n ? ` · рекорд ${sk.best}` : ""}</div></div>`;
   const bars = (a, label) => `<div><div class="lbl">${label}, последние ${Math.min(24, a.length)}</div><div class="bars" role="img" aria-label="${label}: от ${Math.min(...a.slice(-24).map(x => x.p))} до ${Math.max(...a.slice(-24).map(x => x.p))} процентов">${a.slice(-24).map(x => `<span class="${x.p<65?"lo":""}" style="height:${Math.max(4,x.p)}%" title="${x.p}%"></span>`).join("")}</div></div>`;
   const trend = [];
   if(d.length >= 5) trend.push(bars(d, "Диктанты"));
@@ -789,7 +790,7 @@ $("#mList").addEventListener("click", e => {
 $("#mFilter").onchange = renderStats;
 $("#mClear").onclick = () => $("#mConfirm").hidden = false;
 $("#mNo").onclick = () => $("#mConfirm").hidden = true;
-$("#mYes").onclick = () => { store.set("history", []); store.set("mistakes", []); store.set("rev", {}); store.set("cleared", Date.now()); rq = []; rpos = 0; paintBadge(); $("#mConfirm").hidden = true; renderStats(); cloudDirty(); };
+$("#mYes").onclick = () => { store.set("history", []); store.set("mistakes", []); store.set("rev", {}); store.set("days", {}); store.set("cleared", Date.now()); rq = []; rpos = 0; paintBadge(); paintToday(); $("#mConfirm").hidden = true; renderStats(); cloudDirty(); };
 
 /* ---------- review: mistakes come back after 1, 3, 7, 14, 30, 60 days ---------- */
 const DAY = 864e5, STEPS = [1, 3, 7, 14, 30, 60];
@@ -816,7 +817,7 @@ function grade(it, pass){
   const rev = revState(), r = rev[it.id] || {step: 0};
   const days = pass ? STEPS[Math.min(r.step || 0, STEPS.length - 1)] : 1;
   rev[it.id] = {step: pass ? Math.min((r.step || 0) + 1, STEPS.length) : 0, due: Date.now() + days * DAY - 2 * 3600e3, last: Date.now()};
-  store.set("rev", rev); cloudDirty(); paintBadge();
+  store.set("rev", rev); cloudDirty(); paintBadge(); setTimeout(checkGoal, 0);
   return days;
 }
 const daysWord = n => `${n} ${plural(n, "день", "дня", "дней")}`;
@@ -836,6 +837,7 @@ function whenOf(x){
 function paintBadge(){
   const n = dueItems().length, b = $("#revBadge");
   b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n);
+  try{ n ? navigator.setAppBadge?.(n) : navigator.clearAppBadge?.(); }catch{}
   $("#tab-rev").setAttribute("aria-label", n ? `Повтор, ждут повторения: ${n}` : "Повтор");
 }
 // the sentence is spoken by the same voice as in its dialogue (that audio is usually saved already)
@@ -903,6 +905,7 @@ function checkRev(it){
       ${it.en ? `<div class="ver natural"><span class="eyebrow">Эталон</span><div class="row"><span class="en" lang="en" style="flex:1;min-width:0">${esc(it.en)}</span>${playBtn(it.en)}</div></div>` : ""}`;
   }
   const days = grade(it, pass);
+  pushResult("rev", pass ? 100 : 0);
   const retry = !pass && !rretry.has(it.id);
   if(retry){ rretry.add(it.id); rq.push(it); }
   rdone++;
@@ -938,6 +941,146 @@ function revEmpty(){
 }
 document.addEventListener("click", e => { const g = e.target.closest("[data-go]"); if(g) showView(g.dataset.go); });
 setInterval(paintBadge, 10 * 60e3);
+
+/* ---------- habit: daily goal, streak, reminders ---------- */
+const dk = (ts = Date.now()) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const goalCfg = () => ({ d: 1, t: 5, r: true, ...(store.get("goal", null) || {}) });
+function todayCounts(){
+  const today = dk(), c = {dict: 0, tr: 0, rev: 0};
+  for(const h of store.get("history", [])) if(dk(h.t) === today && h.k in c) c[h.k]++;
+  return c;
+}
+function goalState(){
+  const g = goalCfg(), c = todayCounts(), due = g.r ? dueItems().length : 0;
+  const parts = [];
+  if(g.d) parts.push({key: "dict", label: `${plural(g.d, "Диалог", "Диалога", "Диалогов")}`, have: Math.min(c.dict, g.d), need: g.d, go: "dict"});
+  if(g.t) parts.push({key: "tr", label: `${plural(g.t, "Перевод", "Перевода", "Переводов")}`, have: Math.min(c.tr, g.t), need: g.t, go: "tr"});
+  if(g.r) parts.push({key: "rev", label: "Повторение", have: due ? 0 : 1, need: 1, go: "rev", note: due ? `осталось ${due} ${plural(due, "карточка", "карточки", "карточек")}` : (c.rev ? `повторено: ${c.rev}` : "на сегодня карточек нет")});
+  const total = parts.reduce((k, p) => k + p.need, 0), done = parts.reduce((k, p) => k + p.have, 0);
+  const met = parts.length > 0 && done >= total && (c.dict + c.tr + c.rev) > 0;
+  return {g, c, parts, frac: total ? done / total : 0, met};
+}
+const daysMet = () => store.get("days", {});
+function streakInfo(){
+  const days = daysMet(), set = new Set(Object.keys(days));
+  let n = 0, d = new Date();
+  if(!set.has(dk(d))) d.setDate(d.getDate() - 1);
+  while(set.has(dk(d))){ n++; d.setDate(d.getDate() - 1); }
+  let best = 0, run = 0, prev = null;
+  for(const k of [...set].sort()){
+    const t = new Date(k + "T12:00:00");
+    run = prev && Math.round((t - prev) / DAY) === 1 ? run + 1 : 1; best = Math.max(best, run); prev = t;
+  }
+  return {n, best, today: set.has(dk())};
+}
+function paintToday(){
+  const st = goalState(), sk = streakInfo(), b = $("#todayBtn");
+  st.met = st.met || sk.today; // once today's goal is done, it stays done even if the goal is raised later
+  $("#todayRing").style.strokeDasharray = `${Math.round((st.met ? 1 : st.frac) * 100)} 100`;
+  $("#streakN").textContent = sk.n;
+  b.classList.toggle("met", st.met); b.classList.toggle("lit", sk.n > 0);
+  b.setAttribute("aria-label", `Сегодня: ${st.met ? "цель выполнена" : `выполнено ${Math.round(st.frac * 100)}%`}. Серия: ${sk.n} ${plural(sk.n, "день", "дня", "дней")}`);
+  if($("#todaySheet").open) renderTodaySheet();
+}
+function checkGoal(){
+  const st = goalState(), today = dk(), days = daysMet();
+  if(st.met && !days[today]){
+    days[today] = Date.now(); store.set("days", days); cloudDirty();
+    const sk = streakInfo();
+    showToast(`Цель на сегодня выполнена! Серия: ${sk.n} ${plural(sk.n, "день", "дня", "дней")}.`);
+    announce("Цель на сегодня выполнена");
+  }
+  paintToday(); reportStatus();
+}
+function renderTodaySheet(){
+  const st = goalState(), sk = streakInfo();
+  st.met = st.met || sk.today;
+  $("#goalList").innerHTML = st.parts.length ? st.parts.map(p => `<li class="${p.have >= p.need ? "done" : ""}"><span>${p.label}${p.note ? ` <span class="note">· ${p.note}</span>` : ""}</span>
+      ${p.have >= p.need ? `<b>✓${p.key === "rev" ? "" : ` ${p.have}/${p.need}`}</b>` : `<span class="row"><b>${p.key === "rev" ? "" : `${p.have}/${p.need}`}</b><button class="btn" type="button" data-go="${p.go}" data-close>Начать</button></span>`}</li>`).join("")
+    : `<li>Цель не задана — выберите ниже, сколько заниматься в день.</li>`;
+  $("#streakLine").innerHTML = st.met ? `<b>Цель выполнена.</b> Серия: ${sk.n} ${plural(sk.n, "день", "дня", "дней")}${sk.best > sk.n ? ` · рекорд ${sk.best}` : ""}.`
+    : sk.n ? `Серия: <b>${sk.n} ${plural(sk.n, "день", "дня", "дней")}</b> — выполните цель сегодня, чтобы её продолжить.${sk.best > sk.n ? ` Рекорд: ${sk.best}.` : ""}`
+    : `Выполняйте цель каждый день — так появится серия.${sk.best ? ` Рекорд: ${sk.best}.` : ""}`;
+  $("#gD").textContent = st.g.d; $("#gT").textContent = st.g.t; $("#gR").checked = !!st.g.r;
+  const rm = remCfg(); $("#remOn").checked = rm.on; $("#remTime").value = rm.time; $("#remTest").hidden = !rm.on;
+}
+$("#todayBtn").onclick = () => { renderTodaySheet(); $("#todaySheet").showModal(); };
+$("#todayClose").onclick = $("#todayDone").onclick = () => $("#todaySheet").close();
+$("#todaySheet").addEventListener("click", e => {
+  const st = e.target.closest("[data-step]");
+  if(st){ const [k, d] = st.dataset.step.split(":"); const g = goalCfg(); g[k] = Math.max(0, Math.min(k === "d" ? 5 : 30, g[k] + Number(d))); store.set("goal", g); store.set("prefsTs", Date.now()); cloudDirty(); checkGoal(); renderTodaySheet(); }
+  if(e.target.closest("[data-close]")) $("#todaySheet").close();
+});
+$("#gR").onchange = e => { const g = goalCfg(); g.r = e.target.checked; store.set("goal", g); store.set("prefsTs", Date.now()); cloudDirty(); checkGoal(); renderTodaySheet(); };
+
+// reminders: a daily push from the Ear & Pen server at the chosen time, skipped when today's goal is done
+const remCfg = () => ({ on: false, time: "19:00", ...(store.get("remind", null) || {}) });
+const pushOK = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const b64ToBytes = s => { s = s.replace(/-/g, "+").replace(/_/g, "/"); const bin = atob(s + "===".slice((s.length + 3) % 4)); return Uint8Array.from(bin, c => c.charCodeAt(0)); };
+async function api(path, method = "GET", body){
+  const r = await fetch(API_URL.replace(/\/$/, "") + path, { method, headers: { "Content-Type": "application/json", ...(await authHeaders()) }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if(!r.ok) throw { code: j.error || "upstream_error" };
+  return j;
+}
+function remNote(msg, err){ $("#remNote").textContent = msg; $("#remNote").classList.toggle("err-msg", !!err); }
+async function turnRemindersOn(){
+  const rm = remCfg();
+  if(!user){ $("#remOn").checked = false; $("#todaySheet").close(); openAcct("Напоминания приходят после входа в аккаунт."); return; }
+  if(isIOS() && !standalone()){ $("#remOn").checked = false; remNote("На iPhone напоминания работают в установленном приложении: Safari → Поделиться → На экран «Домой», затем откройте Ear & Pen с иконки.", true); return; }
+  if(!pushOK()){ $("#remOn").checked = false; remNote("Этот браузер не умеет присылать напоминания. Попробуйте Chrome или установленное приложение.", true); return; }
+  const perm = await Notification.requestPermission();
+  if(perm !== "granted"){ $("#remOn").checked = false; remNote("Уведомления запрещены. Разрешите их для earandpen.net в настройках браузера или телефона.", true); return; }
+  remNote("Включаю…");
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    const { key } = await api("/vapid");
+    let sub = await reg.pushManager.getSubscription();
+    if(sub){ const k = sub.options?.applicationServerKey; const same = k && btoa(String.fromCharCode(...new Uint8Array(k))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"") === key; if(!same){ await sub.unsubscribe().catch(() => {}); sub = null; } }
+    sub = sub || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
+    await api("/push", "POST", { sub: sub.toJSON(), time: rm.time, tz: Intl.DateTimeFormat().resolvedOptions().timeZone });
+    store.set("remind", { on: true, time: rm.time });
+    lastStatus = ""; await reportStatus(true);
+    remNote(`Готово: напоминание каждый день в ${rm.time}, если цель ещё не выполнена.`);
+    $("#remTest").hidden = false;
+  }catch(e){
+    $("#remOn").checked = false; store.set("remind", { ...rm, on: false });
+    remNote(e && e.code ? errCopy(e) : "Не получилось включить напоминания. Попробуйте ещё раз.", true);
+  }
+}
+async function turnRemindersOff(){
+  const rm = remCfg(); store.set("remind", { ...rm, on: false }); $("#remTest").hidden = true;
+  try{
+    const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
+    if(sub){ await api("/push", "DELETE", { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe().catch(() => {}); }
+  }catch{}
+  remNote("Напоминания выключены.");
+}
+$("#remOn").onchange = e => e.target.checked ? turnRemindersOn() : turnRemindersOff();
+$("#remTime").onchange = e => {
+  const v = /^\d{2}:\d{2}$/.test(e.target.value) ? e.target.value : "19:00";
+  store.set("remind", { ...remCfg(), time: v });
+  if(remCfg().on) turnRemindersOn();
+};
+$("#remTest").onclick = async () => {
+  const b = $("#remTest"); b.disabled = true;
+  try{ const r = await api("/push/test", "POST", {}); remNote(r.sent ? "Отправлено — уведомление придёт через несколько секунд." : "Не удалось доставить. Выключите и снова включите напоминания.", !r.sent); }
+  catch(e){ remNote(errCopy(e), true); }
+  finally{ b.disabled = false; }
+};
+// tell the server what tomorrow's reminder should say (only when it changed)
+let lastStatus = "", lastStatusAt = 0;
+async function reportStatus(force){
+  if(!remCfg().on || !user || !API_URL || !navigator.onLine) return;
+  const rev = revState(), now = Date.now(), sk = streakInfo();
+  const dues = reviewItems().map(it => dueOf(it, rev)).filter(t => t < now + 30 * DAY).sort((a, b) => a - b).slice(0, 300);
+  const g = goalCfg();
+  const body = { goalDay: daysMet()[dk()] ? dk() : "", dues, goal: g, streak: sk.n };
+  const sig = JSON.stringify({ ...body, dues: dues.map(t => Math.round(t / 6e5)) });
+  if(!force && sig === lastStatus && now - lastStatusAt < 6 * 3600e3) return;
+  lastStatus = sig; lastStatusAt = now;
+  try{ await api("/push/status", "POST", body); }catch{ lastStatus = ""; }
+}
 
 /* ---------- toast ---------- */
 let toastEl;
@@ -1054,7 +1197,7 @@ if("serviceWorker" in navigator && location.protocol === "https:"){
 }
 
 /* ---------- account & sync (Firebase, like Pip's Sky Islands) ---------- */
-const PREF_KEYS = ["level", "topic", "custom", "rate", "voiceA", "voiceB", "accent"];
+const PREF_KEYS = ["level", "topic", "custom", "rate", "voiceA", "voiceB", "accent", "goal"];
 function snapshot(){
   const prefs = {};
   for(const k of PREF_KEYS){ const v = store.get(k, null); if(v !== null) prefs[k] = v; }
@@ -1062,7 +1205,7 @@ function snapshot(){
     prefs, prefsTs: store.get("prefsTs", 0),
     tr: { queue: store.get("trQueue", null), idx: store.get("trIdx", 0) }, trTs: store.get("trTs", 0),
     history: store.get("history", []), mistakes: store.get("mistakes", []),
-    dialogs: store.get("genDialogs", []), rev: store.get("rev", {}), cleared: store.get("cleared", 0),
+    dialogs: store.get("genDialogs", []), rev: store.get("rev", {}), days: store.get("days", {}), cleared: store.get("cleared", 0),
   }, {});
 }
 function applySnapshot(x){
@@ -1072,6 +1215,7 @@ function applySnapshot(x){
   store.set("history", x.history); store.set("mistakes", x.mistakes); store.set("cleared", x.cleared);
   store.set("genDialogs", x.dialogs);
   store.set("rev", x.rev || {});
+  store.set("days", x.days || {});
   if(x.tr && x.tr.queue && x.tr.queue.length){ store.set("trQueue", x.tr.queue); store.set("trIdx", x.tr.idx || 0); store.set("trTs", x.trTs); }
   // show the new values
   if(!same(before.prefs, x.prefs)){
@@ -1092,7 +1236,7 @@ function applySnapshot(x){
     if($("#trResult").hidden) renderTr();
   }
   if(state.view === "stats") renderStats();
-  paintBadge();
+  paintBadge(); paintToday();
   if(state.view === "rev" && rpos >= rq.length) revEmpty();
 }
 
@@ -1163,7 +1307,7 @@ $("#emSignUp").onclick = () => { if(!$("#emailForm").reportValidity()) return; b
 $("#emReset").onclick = () => { const em = $("#emIn").value.trim(); if(!em){ acctMsg("Сначала введите почту."); return; } busy($("#emReset"), async () => { await cloud.resetPassword(em); acctMsg("", "Письмо для смены пароля отправлено."); }); };
 $("#signOut").onclick = async () => { await cloud.signOut(); acctMsg(); };
 $("#syncNow").onclick = () => syncNow();
-addEventListener("visibilitychange", () => { if(document.visibilityState === "visible"){ syncNow(); paintBadge(); } });
+addEventListener("visibilitychange", () => { if(document.visibilityState === "visible"){ syncNow(); paintBadge(); paintToday(); } else reportStatus(); });
 
 async function bootCloud(){
   if(!FIREBASE) { acctUI(); return; }
@@ -1177,6 +1321,7 @@ async function bootCloud(){
     if(u){
       if($("#acctSheet").open) $("#acctSheet").close();
       syncNow().then(() => {
+        checkGoal(); reportStatus(true);
         unwatch = cloud.watch(remote => {
           if(!remote || syncing) return;
           const local = snapshot(), m = merge(local, remote);
@@ -1193,6 +1338,9 @@ if(!synth) showToast("Этот браузер не умеет озвучиват
 renderDialog(); renderTr();
 paintAccess();
 paintBadge();
+paintToday();
+const openFromHash = () => { const h = location.hash.slice(1); if(TABS.includes(h) && h !== state.view) showView(h); };
+openFromHash(); addEventListener("hashchange", openFromHash);
 if(!store.get("introSeen", false)) $("#intro").hidden = false;
 $("#introClose").onclick = () => { $("#intro").hidden = true; store.set("introSeen", true); };
 netState();
