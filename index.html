@@ -46,7 +46,9 @@
         <svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" class="ring-bg"/><circle cx="18" cy="18" r="15" class="ring-fg" id="todayRing" pathLength="100"/></svg>
         <svg class="flame" viewBox="0 0 16 16" aria-hidden="true"><path d="M8.2 1.5c.4 2.1-.6 3.2-1.6 4.3C5.6 6.9 4.5 8 4.5 10a3.5 3.5 0 0 0 7 0c0-1.3-.5-2.3-1.2-3.1.1.9-.2 1.6-.9 2 .2-2.6-.4-5.4-1.2-7.4z"/></svg>
         <span id="streakN">0</span>
+        <span class="tlbl">Сегодня</span>
       </button>
+      <button class="btn sq hdrbtn" id="setBtn" type="button" aria-label="Настройки" title="Настройки"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
       <button class="btn" id="installBtn" type="button" hidden><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 2v8m-3.5-3.5L8 10l3.5-3.5M3 13h10"/></svg><span>Установить</span></button>
       <button class="acct out" id="acctBtn" type="button" data-sync="off" aria-label="Войти">
         <span class="av" aria-hidden="true"><span id="acctAv">?</span><i class="dot"></i></span>
@@ -66,14 +68,7 @@
 
   <!-- DICTATION -->
   <section class="desk" id="view-dict" role="tabpanel" aria-labelledby="tab-dict">
-    <div class="intro" id="intro" hidden>
-      <ol>
-        <li><b>Слушайте</b> строку — ▶ или «Слушать весь диалог».</li>
-        <li><b>Пишите</b>, что услышали, по строке в поле.</li>
-        <li><b>Проверяйте</b> — ошибки подсветятся, Claude объяснит, почему.</li>
-      </ol>
-      <button class="btn ghost" id="introClose" type="button">Понятно</button>
-    </div>
+    <div class="intro" id="intro" hidden><button class="btn ghost" id="introClose" type="button">Понятно</button></div>
 
     <div class="dtop">
       <div class="dhead">
@@ -87,19 +82,24 @@
         <button class="btn sq" id="dNext" type="button" aria-label="Следующий диалог">→</button>
         <div class="gen">
           <button class="btn primary" id="dGen" type="button" data-paid><svg class="lk" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg><span class="gl">Новый диалог</span></button>
-          <button class="btn setchip" type="button" data-set aria-label="Уровень и тема новых диалогов"><span class="setlbl"></span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
         </div>
       </div>
     </div>
+
+    <p class="note claudehint" id="dClaude" hidden><svg class="lk" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg><span class="ct"></span></p>
 
     <div class="row modes">
       <div class="seg mode" id="modeSeg" role="group" aria-label="Режим">
         <button type="button" data-m="write" aria-pressed="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3-8 8H2.5v-3z"/></svg>Писать</button><button type="button" data-m="speak" aria-pressed="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="5.5" y="1.75" width="5" height="8" rx="2.5"/><path d="M3.25 7.5a4.75 4.75 0 0 0 9.5 0M8 12.25v2"/></svg>Говорить</button>
       </div>
-      <label class="row note s-only"><input type="checkbox" id="sText" checked> показывать текст</label>
-      <label class="row note s-only"><input type="checkbox" id="sRec" checked> записывать мой голос</label>
-      <label class="row note s-only micsel" id="micWrap" hidden>микрофон <select id="micSel" aria-label="Микрофон"></select></label>
+      <button class="btn sq ghost s-only" id="sOptsBtn" type="button" aria-expanded="false" aria-controls="sOpts" title="Настройки режима" aria-label="Настройки режима «Говорить»"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
       <button class="btn ghost ownbtn" id="ownBtn" type="button" aria-haspopup="dialog"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>Свой текст</button>
+    </div>
+
+    <div class="sopts s-only" id="sOpts" hidden>
+      <label class="row note"><input type="checkbox" id="sText" checked><span>показывать текст фразы</span></label>
+      <label class="row note"><input type="checkbox" id="sRec" checked><span>записывать мой голос (кнопки «Диктор / Я»)</span></label>
+      <label class="row note micsel" id="micWrap" hidden>микрофон <select id="micSel" aria-label="Микрофон"></select></label>
     </div>
 
     <div class="row spread playrow">
@@ -112,7 +112,7 @@
       </div>
     </div>
 
-    <p class="note s-only" id="sHelp">Послушайте строку и повторите её вслух: нажмите <b>микрофон</b>, скажите фразу — слова, которые не распознались, подсветятся. Без текста сложнее: так тренируется и слух, и память. <span id="sWho"></span></p>
+    <p class="note s-only" id="sHelp"><span id="sWho"></span></p>
     <p class="partial s-only" id="sNo" hidden>Этот браузер не умеет распознавать речь (это есть в Chrome, Edge и Safari). Но записать себя и сравнить с диктором можно: нажмите на микрофон, скажите фразу, нажмите ещё раз.</p>
 
     <p class="note w-only" id="dHelp">Слушайте строку и пишите, что услышали.<span class="keys"> <span class="kbd">Enter</span> — к следующей строке (она сразу прозвучит), <span class="kbd">Esc</span> — повторить текущую.</span></p>
@@ -124,7 +124,6 @@
       <button class="btn primary s-only" id="sDone" type="button">Итог</button>
       <button class="btn w-only" id="dPeek" type="button">Подсмотреть строку</button>
       <button class="btn ghost" id="dReset" type="button">Начать заново</button>
-      <label class="row note strict w-only"><input type="checkbox" id="strict"> строго: регистр и пунктуация</label>
     </div>
 
     <div class="partial" id="dPartial" role="alert" hidden>
@@ -142,16 +141,6 @@
       <ul class="vocab" id="dVocab"></ul>
     </div>
 
-    <details class="settings">
-      <summary>Голоса озвучки</summary>
-      <div class="voices">
-        <label class="field"><span class="lbl">Голос A</span><select id="voiceA"></select></label>
-        <label class="field"><span class="lbl">Голос B</span><select id="voiceB"></select></label>
-        <label class="field"><span class="lbl">Акцент</span>
-          <select id="accent"><option value="en-US">Американский</option><option value="en-GB">Британский</option></select></label>
-      </div>
-      <p class="note" style="margin-top:8px">HD-голоса — Google Chirp 3 HD, звучат как живая речь. Каждая фраза озвучивается один раз и сохраняется, повторы мгновенные. Голоса браузера работают без интернета, но звучат проще.</p>
-    </details>
   </section>
 
   <!-- TRANSLATION -->
@@ -166,11 +155,11 @@
     </div>
     <div class="hintbox" id="trHintBox" hidden><span class="chip" id="trFocus"></span><p id="trHintText"></p></div>
     <div id="trResult" aria-live="polite" hidden></div>
+    <p class="note claudehint" id="trClaude" hidden><svg class="lk" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg><span class="ct"></span></p>
     <div class="trmore">
       <button class="btn ghost" id="trSkip" type="button">Пропустить →</button>
       <div class="gen">
         <button class="btn" id="trGen" type="button" data-paid><svg class="lk" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/></svg><span class="gl">Новые предложения</span></button>
-        <button class="btn setchip" type="button" data-set aria-label="Уровень и тема новых предложений"><span class="setlbl"></span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button>
       </div>
     </div>
   </section>
@@ -215,7 +204,7 @@
 
 <!-- phone: controls for the current line, above the keyboard -->
 <div id="mbar" hidden>
-  <button class="btn" id="mbReplay" type="button" aria-label="Повторить строку"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.6M3 2.5v2.4h2.4"/></svg><span>Ещё раз</span></button>
+  <button class="btn" id="mbReplay" type="button" aria-label="Повторить строку"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.6M3 2.5v2.4h2.4"/></svg><span>Снова</span></button>
   <button class="btn" id="mbSlow" type="button" aria-label="Медленно"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 10.5h10a5 4.2 0 0 0-10 0z"/><path d="M12.5 9.8c.6-.9 1.4-1.3 2.2-1"/><path d="M4.5 10.5v2M10.5 10.5v2"/></svg><span>Медленно</span></button>
   <span class="pos" id="mbPos"></span>
   <button class="btn primary" id="mbNext" type="button">Дальше</button>
@@ -270,10 +259,20 @@
   </div>
 </dialog>
 
+<dialog class="sheet" id="tourSheet" aria-labelledby="tourTitle">
+  <div class="sheet-in tour">
+    <div class="tour-ic" id="tourIc" aria-hidden="true"></div>
+    <h2 id="tourTitle"></h2>
+    <p id="tourText"></p>
+    <div class="tour-dots" id="tourDots" aria-hidden="true"></div>
+    <div class="row spread"><button class="btn ghost" id="tourSkip" type="button">Пропустить</button><div class="row"><button class="btn" id="tourBack" type="button">Назад</button><button class="btn primary" id="tourNext" type="button">Дальше</button></div></div>
+  </div>
+</dialog>
+
 <dialog class="sheet" id="setSheet" aria-labelledby="setTitle">
   <div class="sheet-in">
-    <div class="row spread"><h2 id="setTitle">Уровень и тема</h2><button class="btn ghost" id="setClose" type="button" aria-label="Закрыть">✕</button></div>
-    <p class="note">Для новых диалогов и предложений, которые пишет Claude. Встроенные диалоги подписаны своим уровнем.</p>
+    <div class="row spread"><h2 id="setTitle">Настройки</h2><button class="btn ghost" id="setClose" type="button" aria-label="Закрыть">✕</button></div>
+    <p class="note" id="setNote">Ваш уровень и тема: по ним подбираются предложения для перевода и пишет Claude.</p>
     <label class="field"><span class="lbl">Уровень</span>
       <select id="level">
         <option value="A2">A2 · базовый</option>
@@ -285,7 +284,24 @@
       <select id="topic"></select></label>
     <label class="field" id="customWrap" hidden><span class="lbl">Своя тема</span>
       <input type="text" id="topicCustom" placeholder="например, аренда квартиры"></label>
-    <button class="btn primary" id="setDone" type="button">Готово</button>
+    <div class="set-more">
+      <div class="setblock">
+        <div class="lbl">Озвучка</div>
+        <div class="voices">
+          <label class="field"><span class="lbl">Голос A</span><select id="voiceA"></select></label>
+          <label class="field"><span class="lbl">Голос B</span><select id="voiceB"></select></label>
+          <label class="field"><span class="lbl">Акцент</span>
+            <select id="accent"><option value="en-US">Американский</option><option value="en-GB">Британский</option></select></label>
+        </div>
+        <p class="note">HD-голоса Google звучат как живая речь; голоса браузера работают без интернета, но проще.</p>
+      </div>
+      <div class="setblock">
+        <div class="lbl">Проверка диктанта</div>
+        <label class="row note checkline"><input type="checkbox" id="strict"><span>строго: учитывать регистр и пунктуацию</span></label>
+      </div>
+      <button class="btn ghost" id="tourAgain" type="button">Как пользоваться приложением</button>
+    </div>
+    <div class="row"><button class="btn primary" id="setGo" type="button" hidden>Написать</button><button class="btn primary" id="setDone" type="button">Готово</button></div>
   </div>
 </dialog>
 

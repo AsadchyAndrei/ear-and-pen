@@ -48,8 +48,13 @@ function paintAccess(){
     b.toggleAttribute("data-locked", locked); b.title = tip;
   });
   const gl = $("#trCheck .gl"); if(gl) gl.textContent = locked ? "Сверить с эталоном" : "Проверить";
+  const note = access === "guest" ? `Claude пишет новые диалоги и предложения и разбирает ошибки — <button class="linkbtn" type="button" data-acct>после входа</button>.`
+    : access === "no" ? "Этому аккаунту Claude недоступен: новые диалоги и разбор ошибок выключены." : "";
+  for(const id of ["#dClaude", "#trClaude"]){ $(id).hidden = !note; $(id + " .ct").innerHTML = note; }
+  document.querySelectorAll(".gen").forEach(g => { g.hidden = locked; });
   try{ paintWho(); $("#sNo").hidden = !!SR || serverSTT(); }catch{}
 }
+document.addEventListener("click", e => { if(e.target.closest("[data-acct]")) openAcct(""); });
 function needAccess(what){
   if(canAI()) return true;
   if(access === "guest" && cloud){ openAcct(`${what} — после входа.`); return false; }
@@ -123,8 +128,22 @@ function paintSet(){ document.querySelectorAll(".setlbl").forEach(el => { el.inn
 $("#level").onchange = e => { setPref("level", e.target.value); paintSet(); jumpTo(); newBankQueue(); };
 $("#topic").onchange = e => { setPref("topic", e.target.value); $("#customWrap").hidden = state.topic !== "__custom"; if(!$("#customWrap").hidden) $("#topicCustom").focus(); paintSet(); jumpTo(); newBankQueue(); };
 $("#topicCustom").oninput = e => { setPref("custom", e.target.value); paintSet(); };
-document.addEventListener("click", e => { if(e.target.closest("[data-set]")) $("#setSheet").showModal(); });
+// one window: settings (gear in the header), or "what should Claude write" before a new dialogue / new sentences
+let setMode_ = "settings";
+function openSet(mode = "settings"){
+  setMode_ = mode;
+  const gen = mode !== "settings";
+  $("#setSheet").classList.toggle("gen", gen);
+  $("#setTitle").textContent = mode === "gen" ? "Новый диалог от Claude" : mode === "trgen" ? "Новые предложения от Claude" : "Настройки";
+  $("#setNote").textContent = gen ? "Выберите уровень и тему — Claude напишет под них." : "Ваш уровень и тема: по ним подбираются предложения для перевода и пишет Claude.";
+  $("#setGo").hidden = !gen; $("#setGo").textContent = mode === "gen" ? "Написать диалог" : "Подобрать предложения";
+  $("#setDone").textContent = gen ? "Отмена" : "Готово"; $("#setDone").classList.toggle("primary", !gen);
+  $("#setSheet").showModal();
+}
+document.addEventListener("click", e => { if(e.target.closest("[data-set]")) openSet(); });
+$("#setBtn").onclick = () => openSet();
 $("#setClose").onclick = $("#setDone").onclick = () => $("#setSheet").close();
+$("#setGo").onclick = () => { $("#setSheet").close(); if(setMode_ === "gen") genDialog(); else if(setMode_ === "trgen") genSentences(); };
 paintSet();
 
 /* ---------- tabs ---------- */
@@ -589,8 +608,8 @@ async function explainDictation(){
 }
 $("#dExplainStop").onclick = () => explainCtl?.abort();
 
-$("#dGen").onclick = async () => {
-  if(!needAccess("Новые диалоги от Claude")) return;
+$("#dGen").onclick = () => { if(needAccess("Новые диалоги от Claude")) openSet("gen"); };
+async function genDialog(){
   const btn = $("#dGen"), gl = btn.querySelector(".gl"); btn.disabled = true; gl.innerHTML = `<span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Пишу диалог…`;
   try{
     const lvl = state.level;
@@ -605,7 +624,7 @@ $("#dGen").onclick = async () => {
   }catch(e){
     showToast(e.code === "unavailable" ? NO_AI : errCopy(e));
   }finally{ btn.disabled = false; gl.textContent = "Новый диалог"; }
-};
+}
 
 
 
@@ -643,7 +662,7 @@ navigator.mediaDevices?.addEventListener?.("devicechange", paintMics);
 // where to look when the microphone gives silence
 function micHelp(){
   const ua = navigator.userAgent, mac = /Macintosh/.test(ua) && !(navigator.maxTouchPoints > 1), win = /Windows/.test(ua);
-  const many = !$("#micWrap").hidden ? " Если микрофонов несколько — выберите другой в списке «микрофон» выше." : "";
+  const many = !$("#micWrap").hidden ? " Если микрофонов несколько — выберите другой: ⚙ рядом с «Говорить» → «микрофон»." : "";
   if(isIOS()) return "Проверьте, что сайту разрешён микрофон: Настройки → Приложения → Safari → Микрофон." + many;
   const browser = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : "браузер";
   return `Микрофон присылает тишину — скорее всего, ${browser} слушает не тот микрофон или он выключен.${many} Проверьте значок микрофона в адресной строке${mac ? `, а в macOS — Системные настройки → Конфиденциальность и безопасность → Микрофон → ${browser} и уровень входа в Настройках звука` : win ? ", а в Windows — Параметры → Конфиденциальность → Микрофон и устройство ввода в Параметрах звука" : ""}.`;
@@ -769,6 +788,34 @@ function syncLock(){
   }
 }
 new MutationObserver(syncLock).observe(document.body, {subtree: true, attributes: true, attributeFilter: ["open"]});
+
+
+/* ---------- a short tour on the first visit (and from Settings) ---------- */
+const TI = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+const TOUR = [
+  {ic: TI('<path d="M15 4l5 5L9 20H4v-5z"/>'), t: "Диктант", x: "Слушайте строку диалога и пишите, что услышали. «Проверить» подсветит ошибки, а Claude объяснит, почему слово легко ослышать. Скорость — 0.7×, 0.85× или 1×."},
+  {ic: TI('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>'), t: "Говорить", x: "Переключатель «Писать / Говорить»: повторяйте строку вслух, приложение покажет слова, которые не распознались, и даст сравнить вашу запись с диктором."},
+  {ic: TI('<path d="M4 6h9M8.5 4v2c0 4-2 7-5 8.5M6 10c1.5 2 3.5 3.5 6 4.5"/><path d="M13 20l4-9 4 9M14.5 17h5"/>'), t: "Перевод", x: "Русское предложение — ваш перевод на английский — разбор: оценка, исправленный и «носительский» вариант, правило для каждой ошибки."},
+  {ic: TI('<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4"/>'), t: "Повтор", x: "Ваши ошибки и полезные выражения из пройденных диалогов возвращаются через 1, 3, 7, 14, 30 и 60 дней — пока не запомнятся. Число на вкладке — сколько ждёт сегодня."},
+  {ic: TI('<circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/>'), t: "Сегодня", x: "Кольцо в шапке — цель на день и серия дней подряд. Там же цель настраивается и включаются ежедневные напоминания на телефон."},
+  {ic: TI('<path d="M12 5v14M5 12h14"/>'), t: "Свой текст и аккаунт", x: "Вставьте любой английский текст — получится диктант. Войдите в аккаунт: прогресс синхронизируется между устройствами, и включатся функции Claude. Настройки — ⚙ в шапке."},
+];
+let tourI = 0;
+function paintTour(){
+  const st = TOUR[tourI];
+  $("#tourIc").innerHTML = st.ic; $("#tourTitle").textContent = st.t; $("#tourText").textContent = st.x;
+  $("#tourDots").innerHTML = TOUR.map((_, k) => `<i class="${k === tourI ? "on" : ""}"></i>`).join("");
+  $("#tourBack").hidden = tourI === 0;
+  $("#tourNext").textContent = tourI === TOUR.length - 1 ? "Начать" : "Дальше";
+  $("#tourSkip").hidden = tourI === TOUR.length - 1;
+}
+function openTour(){ tourI = 0; paintTour(); $("#tourSheet").showModal(); $("#tourNext").focus(); }
+const endTour = () => { $("#tourSheet").close(); store.set("introSeen", true); };
+$("#tourNext").onclick = () => { if(tourI < TOUR.length - 1){ tourI++; paintTour(); } else endTour(); };
+$("#tourBack").onclick = () => { if(tourI > 0){ tourI--; paintTour(); } };
+$("#tourSkip").onclick = endTour;
+$("#tourSheet").addEventListener("cancel", () => store.set("introSeen", true));
+$("#tourAgain").onclick = () => { $("#setSheet").close(); openTour(); };
 
 /* ---------- your own text: paste English, it becomes a dictation ---------- */
 const NO_SPLIT = new Set("mr mrs ms dr st jr sr vs etc e.g i.e u.s u.k no fig approx inc ltd co corp dept ave blvd rd mt ft lb oz jan feb mar apr jun jul aug sep sept oct nov dec mon tue wed thu fri sat sun".split(" "));
@@ -1172,8 +1219,11 @@ function finishSpeak(){
 }
 function paintWho(){
   const el = $("#sWho"); if(!el) return;
-  el.textContent = serverSTT() ? "Распознаёт сервер (Google): нажмите на микрофон, скажите фразу, нажмите ещё раз." : SR ? "Распознаёт браузер." + (canAI() ? "" : " После входа распознавать будет сервер — точнее и с записью вашего голоса на любом телефоне.") : "";
+  el.innerHTML = serverSTT() ? "Нажмите 🎤, скажите фразу и нажмите ещё раз — слова, которые не распознались, подсветятся."
+    : SR ? "Нажмите 🎤 и скажите фразу — слова, которые не распознались, подсветятся." + (access === "guest" ? ` <button class="linkbtn" type="button" data-acct>После входа</button> распознаёт сервер — точнее и с записью вашего голоса.` : "")
+    : CAN_REC ? "Нажмите 🎤, скажите фразу и нажмите ещё раз, чтобы сравнить себя с диктором." : "";
 }
+$("#sOptsBtn").onclick = () => { const open = $("#sOpts").hidden; $("#sOpts").hidden = !open; $("#sOptsBtn").setAttribute("aria-expanded", String(open)); if(open) paintMics(); };
 function setMode(m){
   stopListening();
   state.dmode = m; store.set("dmode", m);
@@ -1224,8 +1274,8 @@ $("#trHint").onclick = () => { const open = $("#trHintBox").hidden; $("#trHintBo
 $("#trSkip").onclick = () => { trIdx = (trIdx + 1) % trQueue.length; renderTr(); saveTr(); if(!isPhone()) $("#trIn").focus(); };
 $("#trCheck").onclick = () => checkTr();
 
-$("#trGen").onclick = async () => {
-  if(!needAccess("Новые предложения от Claude")) return;
+$("#trGen").onclick = () => { if(needAccess("Новые предложения от Claude")) openSet("trgen"); };
+async function genSentences(){
   const btn = $("#trGen"), gl = btn.querySelector(".gl"); btn.disabled = true; gl.innerHTML = `<span class="spin" style="display:inline-block;vertical-align:-2px;margin-right:6px"></span>Подбираю…`;
   try{
     const arr = await ai("sentences", {level: state.level, topic: topicText()});
@@ -1235,7 +1285,7 @@ $("#trGen").onclick = async () => {
   }catch(e){
     showToast(e.code === "unavailable" ? NO_AI : errCopy(e));
   }finally{ btn.disabled = false; gl.textContent = "Новые предложения"; }
-};
+}
 
 const playBtn = (text) => `<button class="btn icon say" data-say="${esc(text)}" title="Озвучить" aria-label="Озвучить"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9-5.5z"/></svg></button>`;
 document.addEventListener("click", e => { const b = e.target.closest(".say"); if(b){ stopSpeech(); speak(b.dataset.say, "A"); } });
@@ -2138,7 +2188,7 @@ paintBadge();
 paintToday();
 const openFromHash = () => { const h = location.hash.slice(1); if(TABS.includes(h) && h !== state.view) showView(h); };
 openFromHash(); addEventListener("hashchange", openFromHash);
-if(!store.get("introSeen", false)) $("#intro").hidden = false;
+if(!store.get("introSeen", false)) setTimeout(() => { if(![...document.querySelectorAll("dialog")].some(d => d.open)) openTour(); }, 400);
 $("#introClose").onclick = () => { $("#intro").hidden = true; store.set("introSeen", true); };
 netState();
 bootCloud();
