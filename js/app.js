@@ -673,6 +673,24 @@ $("#lines").addEventListener("click", async e => {
 $("#sRec").checked = store.get("sRec", true);
 $("#sRec").onchange = e => { store.set("sRec", e.target.checked); if(e.target.checked) store.set("recSolo", false); };
 
+
+/* ---------- the page under an open window does not scroll ---------- */
+let lockY = 0;
+function syncLock(){
+  const open = [...document.querySelectorAll("dialog")].some(d => d.open);
+  const html = document.documentElement, locked = html.classList.contains("locked");
+  if(open && !locked){
+    lockY = scrollY;
+    document.body.style.top = `-${lockY}px`;
+    html.classList.add("locked");
+  } else if(!open && locked){
+    html.classList.remove("locked");
+    document.body.style.top = "";
+    scrollTo(0, lockY);
+  }
+}
+new MutationObserver(syncLock).observe(document.body, {subtree: true, attributes: true, attributeFilter: ["open"]});
+
 /* ---------- your own text: paste English, it becomes a dictation ---------- */
 const NO_SPLIT = new Set("mr mrs ms dr st jr sr vs etc e.g i.e u.s u.k no fig approx inc ltd co corp dept ave blvd rd mt ft lb oz jan feb mar apr jun jul aug sep sept oct nov dec mon tue wed thu fri sat sun".split(" "));
 // sentences, with abbreviations like Dr. and a.m. kept inside

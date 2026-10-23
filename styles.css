@@ -277,6 +277,11 @@ dialog.sheet.tall{width:min(560px, calc(100% - 24px))}
 .banner b{color:var(--miss)}
 dialog.sheet{border:0;border-radius:16px;padding:0;background:var(--surface);color:var(--fg);width:min(440px, calc(100% - 24px));max-height:calc(100% - 24px);box-shadow:0 20px 60px rgba(0,0,0,.3)}
 dialog.sheet::backdrop{background:rgba(10,20,28,.5)}
+dialog.sheet{overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+/* while a window is open the page underneath stays put (iPhone ignores overflow:hidden alone) */
+html{scrollbar-gutter:stable}
+html.locked{overflow:hidden}
+html.locked body{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 .sheet-in{padding:22px;display:flex;flex-direction:column;gap:14px}
 .sheet-in h2{font-size:22px}
 .sheet-in form{display:flex;flex-direction:column;gap:10px}
