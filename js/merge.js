@@ -9,6 +9,7 @@
 //   dialogs   dialogues written by Claude   — union of both devices
 //   rev       review schedule per card      — per card, the latest review wins (last)
 //   days      days the daily goal was met   — union of both devices (for the streak)
+//   words     phrase cards from dialogues   — union of both devices (earliest "added" kept)
 //   cleared   "clear history" time          — anything older is dropped everywhere
 
 export const SYNC_V = 1;
@@ -54,6 +55,13 @@ export function merge(a, b) {
       days[k] = Math.max(days[k] || 0, t);
     }
   }
+  const words = {};
+  for (const src of [a.words, b.words]) {
+    for (const [k, w] of Object.entries(src || {})) {
+      if (!w || typeof w !== "object" || !(w.a > cleared)) continue;
+      if (!words[k] || w.a < words[k].a) words[k] = w;
+    }
+  }
   return {
     v: SYNC_V,
     prefs: prefSrc.prefs || {},
@@ -65,6 +73,7 @@ export function merge(a, b) {
     dialogs,
     rev,
     days,
+    words,
     cleared,
   };
 }

@@ -371,7 +371,7 @@ function renderDialog(){
         <button class="btn play" type="button" title="Прослушать" aria-label="Прослушать строку ${i+1}">${PLAY_I}</button>
         <button class="btn slow" type="button" title="Медленно" aria-label="Медленно, строка ${i+1}">${TURTLE}</button>
       </div>
-      ${speakMode ? `<div class="say"><span class="txt" lang="en">${esc(l.text)}</span><span class="txt-h">Текст скрыт — повторите на слух</span><button class="btn mic" type="button" title="Сказать" aria-label="Сказать строку ${i+1}" aria-pressed="false"${SR ? "" : " disabled"}>${MIC_I}</button></div>` : `<input type="text" id="dl-${dIdx}-${i}" aria-label="Строка ${i+1}, ${esc(who)}: что вы услышали" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" lang="en" enterkeyhint="${i === d.lines.length - 1 ? "done" : "next"}" placeholder="Строка ${i+1}…">`}
+      ${speakMode ? `<div class="sayrow"><span class="txt" lang="en">${esc(l.text)}</span><span class="txt-h">Текст скрыт — повторите на слух</span><button class="btn mic" type="button" title="Сказать" aria-label="Сказать строку ${i+1}" aria-pressed="false"${SR ? "" : " disabled"}>${MIC_I}</button></div>` : `<input type="text" id="dl-${dIdx}-${i}" aria-label="Строка ${i+1}, ${esc(who)}: что вы услышали" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" lang="en" enterkeyhint="${i === d.lines.length - 1 ? "done" : "next"}" placeholder="Строка ${i+1}…">`}
     </div>`; }).join("");
   paintSpeakDone();
   $("#dSummary").hidden = $("#dExplainWrap").hidden = $("#dVocabWrap").hidden = $("#dPartial").hidden = true;
@@ -915,6 +915,7 @@ function renderTrResult(it, mine, r){
 /* ---------- stats & mistakes ---------- */
 function pushResult(kind, pct, extra){
   const h = store.get("history", []); h.push({k:kind, p:Math.round(pct), t:Date.now(), ...(extra || {})}); store.set("history", h.slice(-500)); cloudDirty();
+  if((kind === "dict" || kind === "speak") && addWords()) paintBadge();
   setTimeout(checkGoal, 0);
   try{ navigator.storage?.persist?.(); }catch{}
 }
@@ -996,7 +997,7 @@ $("#mList").addEventListener("click", e => {
 $("#mFilter").onchange = renderStats;
 $("#mClear").onclick = () => $("#mConfirm").hidden = false;
 $("#mNo").onclick = () => $("#mConfirm").hidden = true;
-$("#mYes").onclick = () => { store.set("history", []); store.set("mistakes", []); store.set("rev", {}); store.set("days", {}); store.set("cleared", Date.now()); rq = []; rpos = 0; paintBadge(); paintToday(); $("#mConfirm").hidden = true; renderStats(); cloudDirty(); };
+$("#mYes").onclick = () => { store.set("history", []); store.set("mistakes", []); store.set("rev", {}); store.set("days", {}); store.set("words", {}); store.set("cleared", Date.now()); rq = []; rpos = 0; paintBadge(); paintToday(); $("#mConfirm").hidden = true; renderStats(); cloudDirty(); };
 
 /* ---------- review: mistakes come back after 1, 3, 7, 14, 30, 60 days ---------- */
 const DAY = 864e5, STEPS = [1, 3, 7, 14, 30, 60];
@@ -1013,17 +1014,18 @@ function reviewItems(){
     if(it.kind === "tr" && !it.en && x.en) it.en = x.en;
     map.set(id, it);
   }
+  for(const [k, w] of Object.entries(store.get("words", {}))) map.set("w:" + k, {id: "w:" + k, kind: "word", en: w.en, ru: w.ru, d: w.d, t: w.a});
   return [...map.values()];
 }
 const revState = () => store.get("rev", {});
 // a new card comes back the next day; after that, its own schedule
-const dueOf = (it, rev = revState()) => rev[it.id]?.due ?? ((it.t || 0) + 20 * 3600e3);
+const dueOf = (it, rev = revState()) => rev[it.id]?.due ?? ((it.t || 0) + (it.kind === "word" ? -60e3 : 20 * 3600e3));
 function dueItems(now = Date.now()){ const rev = revState(); return reviewItems().filter(it => dueOf(it, rev) <= now).sort((a, b) => dueOf(a, rev) - dueOf(b, rev)); }
 function grade(it, pass){
   const rev = revState(), r = rev[it.id] || {step: 0};
   const days = pass ? STEPS[Math.min(r.step || 0, STEPS.length - 1)] : 1;
   rev[it.id] = {step: pass ? Math.min((r.step || 0) + 1, STEPS.length) : 0, due: Date.now() + days * DAY - 2 * 3600e3, last: Date.now()};
-  store.set("rev", rev); cloudDirty(); paintBadge(); setTimeout(checkGoal, 0);
+  store.set("rev", rev); cloudDirty(); paintBadge(); setTimeout(checkGoal, 0); renderWords();
   return days;
 }
 const daysWord = n => `${n} ${plural(n, "день", "дня", "дней")}`;
@@ -1055,7 +1057,11 @@ function speakCtx(text, mul = 1){
 
 let rq = [], rpos = 0, rdone = 0, rtotal = 0, rretry = new Set();
 function startRev(){
-  rq = dueItems(); rpos = 0; rdone = 0; rtotal = rq.length; rretry = new Set();
+  addWords();
+  const rev0 = revState();
+  // a phrase seen for the first time is shown first, then asked at the end of the session
+  rq = dueItems().map(it => it.kind === "word" && !rev0[it.id] ? {...it, learn: true} : it);
+  rpos = 0; rdone = 0; rtotal = rq.length; rretry = new Set();
   rq.filter(it => it.kind !== "tr").slice(0, 6).forEach(it => {
     let who = "A"; for(const d of dialogs){ const l = d.lines.find(l => l.text === it.text); if(l){ who = l.s; break; } }
     const pick = pickFor(who); if(hdOn && pick.startsWith("g:")) hdBlob(it.text, pick.slice(2), nearestRate(state.rate)).catch(() => {});
@@ -1068,6 +1074,7 @@ function renderRev(){
   $("#revSub").textContent = `Сегодня: ${rtotal} ${plural(rtotal, "карточка", "карточки", "карточек")}`;
   $("#revPos").textContent = `${rpos + 1} / ${rq.length}`;
   $("#revBar").hidden = false; $("#revFill").style.width = `${Math.round(rpos / rq.length * 100)}%`;
+  if(it.kind === "word"){ renderWord(it, card); return; }
   if(it.kind === "dict"){
     card.innerHTML = `<div class="rcard">
       <div class="kind"><span class="chip">на слух</span><span class="note">Прослушайте и напишите фразу целиком.</span></div>
@@ -1126,7 +1133,9 @@ function checkRev(it, said){
   const v = said ? "" : $("#rIn").value.trim(); if(!said && !v){ $("#rIn").focus(); return; }
   const before = revState()[it.id];
   let pass, body;
-  if(said){
+  if(it.kind === "word"){
+    ({pass, body} = wordResult(it, said, v));
+  } else if(said){
     pass = said.pct >= SPEAK_PASS;
     body = `<div class="diffline"><span class="sc ${scClass(said.pct)}">${said.pct}%</span> ${diffHTML(said.ops)}</div>`;
   } else if(it.kind !== "tr"){
@@ -1149,7 +1158,7 @@ function checkRev(it, said){
   $("#rActs").hidden = true; if($("#rIn")) $("#rIn").readOnly = true;
   const res = ok => `<div class="rres ${ok ? "pass" : "fail"}"><div class="head">${ok ? "Верно!" : "Пока не получилось"}</div>${body}
     <div class="next">${ok ? `Следующий повтор — через ${daysWord(ok === true ? days : ok)}.` : retry ? "Повторим ещё раз в конце и завтра." : "Вернёмся к этой карточке завтра."}</div>
-    <div class="row"><button class="btn primary" id="rNext" type="button">${rpos + 1 < rq.length ? "Дальше →" : "Готово"}</button>${!ok && it.kind === "tr" ? `<button class="btn" id="rOk" type="button">Я ответил верно</button>` : ""}</div></div>`;
+    <div class="row"><button class="btn primary" id="rNext" type="button">${rpos + 1 < rq.length ? "Дальше →" : "Готово"}</button>${!ok && (it.kind === "tr" || (it.kind === "word" && !said?.giveUp)) ? `<button class="btn" id="rOk" type="button">Я ответил верно</button>` : ""}</div></div>`;
   $("#rRes").innerHTML = res(pass);
   const wire = () => {
     $("#rNext").onclick = () => { rpos++; renderRev(); };
@@ -1172,16 +1181,133 @@ function revEmpty(){
   $("#revPos").textContent = "";
   $("#revBar").hidden = !rtotal; if(rtotal) $("#revFill").style.width = "100%";
   $("#revSub").textContent = items.length ? `Карточек: ${items.length} · выучено: ${learned}` : "";
+  renderWords();
   $("#revCard").innerHTML = !items.length
-    ? `<div class="revdone"><p>Здесь будут ваши ошибки из диктанта и перевода. Они возвращаются через 1, 3, 7, 14, 30 и 60 дней — пока не запомнятся.</p><button class="btn primary" type="button" data-go="dict">К диктанту</button></div>`
+    ? `<div class="revdone"><p>Здесь будут ваши ошибки из диктанта и перевода и выражения из пройденных диалогов. Они возвращаются через 1, 3, 7, 14, 30 и 60 дней — пока не запомнятся.</p><button class="btn primary" type="button" data-go="dict">К диктанту</button></div>`
     : `<div class="revdone">${rtotal ? `<div class="big">Готово!</div><p>Повторено карточек: ${rdone}.</p>` : `<p><b>На сегодня всё повторено.</b></p>`}${next ? `<p class="note">Следующее повторение — ${dayTxt(next)}.</p>` : ""}<button class="btn" type="button" data-go="dict">К диктанту</button></div>`;
 }
 document.addEventListener("click", e => { const g = e.target.closest("[data-go]"); if(g) showView(g.dataset.go); });
 setInterval(paintBadge, 10 * 60e3);
 
+
+/* ---------- phrase cards: expressions from the dialogues you have done ---------- */
+const wordKey = en => normPhrase(en);
+// the dialogues you finished, oldest first: their phrases come in that order
+function doneDialogs(){
+  const seen = new Set(), out = [];
+  for(const h of store.get("history", [])) if((h.k === "dict" || h.k === "speak") && h.d && !seen.has(h.d)){ seen.add(h.d); out.push(h.d); }
+  return out.map(id => dialogs.find(d => d.id === id)).filter(d => d?.vocab?.length);
+}
+// add today's new phrases (up to the daily number); true when something was added
+function addWords(){
+  const n = goalCfg().w ?? 8; if(!n) return false;
+  const words = store.get("words", {}), today = dk();
+  let room = n - Object.values(words).filter(w => dk(w.a) === today).length;
+  if(room <= 0) return false;
+  let added = 0; const t = Date.now();
+  for(const d of doneDialogs()){
+    for(const v of d.vocab){
+      const k = wordKey(v.en); if(!k || words[k]) continue;
+      words[k] = {en: v.en, ru: v.ru, d: d.id, a: t + added}; added++;
+      if(--room <= 0) break;
+    }
+    if(room <= 0) break;
+  }
+  if(added){ store.set("words", words); cloudDirty(); }
+  return added > 0;
+}
+// accepted answers: "freeze / put on hold" → both; "the GC (general contractor)" → with or without the brackets
+function wordAnswers(en){
+  const out = new Set();
+  for(const part of String(en).split(/\s+\/\s+/)){
+    out.add(normPhrase(part));
+    const noPar = part.replace(/\s*\([^)]*\)\s*/g, " ");
+    out.add(normPhrase(noPar));
+  }
+  return [...out].filter(Boolean);
+}
+function checkWordText(it, v){
+  const got = normPhrase(v), ans = wordAnswers(it.en);
+  if(ans.includes(got)) return {pass: true};
+  const near = ans.find(a => lev(a, got) <= (a.length >= 10 ? 2 : 1));
+  return near ? {pass: true, typo: true} : {pass: false};
+}
+// the dialogue line where the phrase was used, with the phrase marked
+function wordCtx(it){
+  const d = dialogs.find(x => x.id === it.d); if(!d) return null;
+  const words = wordAnswers(it.en).sort((a, b) => b.length - a.length);
+  for(const l of d.lines){
+    const low = l.text.toLowerCase().replace(/[’‘]/g, "'");
+    for(const w of words){
+      const at = low.indexOf(w); if(at < 0 || w.length < 3) continue;
+      return {text: l.text, html: esc(l.text.slice(0, at)) + "<mark>" + esc(l.text.slice(at, at + w.length)) + "</mark>" + esc(l.text.slice(at + w.length))};
+    }
+  }
+  return null;
+}
+const ctxHTML = c => c ? `<div class="ctxline"><span lang="en">${c.html}</span>${playBtn(c.text)}</div>` : "";
+function renderWord(it, card){
+  const rev = revState();
+  if(it.learn){
+    const c = wordCtx(it);
+    card.innerHTML = `<div class="rcard">
+      <div class="kind"><span class="chip">новое выражение</span><span class="note">Послушайте и запомните — в конце его нужно будет вспомнить.</span></div>
+      <div class="learn"><div class="ru" lang="ru">${esc(it.ru)}</div><div class="row"><span class="en" lang="en">${esc(it.en)}</span>${playBtn(it.en)}</div>${ctxHTML(c)}</div>
+      <div class="row" id="rActs"><button class="btn primary" id="rNext" type="button">Запомнил →</button></div></div>`;
+    stopSpeech(); speak(it.en.split(/\s+\/\s+/)[0], "A");
+    $("#rNext").onclick = () => { rq.push({...it, learn: false}); rtotal = Math.max(rtotal, rq.length - rdone); rpos++; renderRev(); };
+    if(!isPhone()) $("#rNext").focus();
+    return;
+  }
+  card.innerHTML = `<div class="rcard">
+    <div class="kind"><span class="chip">выражение</span><span class="note">Как это по-английски?</span></div>
+    <div class="ru big" lang="ru">${esc(it.ru)}</div>
+    <div class="answer"><input type="text" id="rIn" aria-label="Выражение на английском" placeholder="По-английски…" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" lang="en" enterkeyhint="done">${SR ? `<button class="btn mic" id="rMic" type="button" title="Сказать" aria-label="Сказать вслух" aria-pressed="false">${MIC_I}</button>` : ""}</div>
+    <div class="heard" id="rHeard" aria-live="polite"></div>
+    <div class="row" id="rActs"><button class="btn primary" id="rCheck" type="button">Проверить</button><button class="btn" id="rGive" type="button">Не помню</button><button class="btn ghost" id="rSkip" type="button">Пропустить</button></div>
+    <div id="rRes"></div></div>`;
+  $("#rCheck").onclick = () => checkRev(it);
+  $("#rGive").onclick = () => checkRev(it, {giveUp: true});
+  $("#rSkip").onclick = () => { stopListening(); rpos++; renderRev(); };
+  $("#rIn").addEventListener("keydown", e => { if(e.key !== "Enter") return; e.preventDefault(); $("#rNext") ? $("#rNext").click() : checkRev(it); });
+  if($("#rMic")) $("#rMic").onclick = async () => {
+    if(listening){ stopListening(true); return; }
+    let best = null;
+    const r = await hearLine(it.en, $("#rMic"), $("#rHeard"));
+    if(!r) return;
+    for(const a of wordAnswers(it.en)){ const x = scoreSpeech(a, [r.heard]); if(!best || x.pct > best.pct) best = x; }
+    checkRev(it, best);
+  };
+  if(!isPhone()) $("#rIn").focus();
+}
+function wordResult(it, said, v){
+  let pass, note = "";
+  if(said?.giveUp){ pass = false; }
+  else if(said){ pass = said.pct >= SPEAK_PASS; note = `<div class="diffline"><span class="sc ${scClass(said.pct)}">${said.pct}%</span> ${diffHTML(said.ops)}</div>`; }
+  else { const r = checkWordText(it, v); pass = r.pass; note = r.typo ? `<div class="note">Засчитано, но с опечаткой: <del class="w" lang="en">${esc(v)}</del></div>` : (!r.pass ? `<div>Ваш ответ: <del class="w" lang="en">${esc(v)}</del></div>` : ""); }
+  const c = wordCtx(it);
+  const body = `${note}<div class="row"><ins class="w" lang="en" style="font-size:18px">${esc(it.en)}</ins>${playBtn(it.en.split(/\s+\/\s+/)[0])}<span class="note">— ${esc(it.ru)}</span></div>${ctxHTML(c)}`;
+  return {pass, body};
+}
+function renderWords(){
+  const words = Object.entries(store.get("words", {})).map(([k, w]) => ({k, ...w})).sort((a, b) => b.a - a.a);
+  $("#wordsBox").hidden = !words.length;
+  if(!words.length) return;
+  const rev = revState();
+  const learned = words.filter(w => (rev["w:" + w.k]?.step || 0) >= 4).length;
+  $("#wordsSum").textContent = `Мой словарь · ${words.length} ${plural(words.length, "выражение", "выражения", "выражений")}${learned ? ` · выучено ${learned}` : ""}`;
+  if(!$("#wordsBox").open) return;
+  $("#wordsList").innerHTML = words.map(w => {
+    const r = rev["w:" + w.k], due = r?.due ?? w.a;
+    const st = !r ? "новое" : (r.step || 0) >= 4 ? "выучено" : due <= Date.now() ? "пора повторить" : `повтор ${dayTxt(due)}`;
+    return `<li><span class="t"><b lang="en">${esc(w.en)}</b> — ${esc(w.ru)}</span><span class="st${(r?.step || 0) >= 4 ? " ok" : ""}">${st}</span>${playBtn(w.en.split(/\s+\/\s+/)[0])}</li>`;
+  }).join("");
+}
+$("#wordsBox").addEventListener("toggle", renderWords);
+
 /* ---------- habit: daily goal, streak, reminders ---------- */
 const dk = (ts = Date.now()) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-const goalCfg = () => ({ d: 1, t: 5, r: true, ...(store.get("goal", null) || {}) });
+const goalCfg = () => ({ d: 1, t: 5, r: true, w: 8, ...(store.get("goal", null) || {}) });
 function todayCounts(){
   const today = dk(), c = {dict: 0, tr: 0, rev: 0};
   for(const h of store.get("history", [])){ const k = h.k === "speak" ? "dict" : h.k; if(dk(h.t) === today && k in c) c[k]++; }
@@ -1238,14 +1364,14 @@ function renderTodaySheet(){
   $("#streakLine").innerHTML = st.met ? `<b>Цель выполнена.</b> Серия: ${sk.n} ${plural(sk.n, "день", "дня", "дней")}${sk.best > sk.n ? ` · рекорд ${sk.best}` : ""}.`
     : sk.n ? `Серия: <b>${sk.n} ${plural(sk.n, "день", "дня", "дней")}</b> — выполните цель сегодня, чтобы её продолжить.${sk.best > sk.n ? ` Рекорд: ${sk.best}.` : ""}`
     : `Выполняйте цель каждый день — так появится серия.${sk.best ? ` Рекорд: ${sk.best}.` : ""}`;
-  $("#gD").textContent = st.g.d; $("#gT").textContent = st.g.t; $("#gR").checked = !!st.g.r;
+  $("#gD").textContent = st.g.d; $("#gT").textContent = st.g.t; $("#gW").textContent = st.g.w; $("#gR").checked = !!st.g.r;
   const rm = remCfg(); $("#remOn").checked = rm.on; $("#remTime").value = rm.time; $("#remTest").hidden = !rm.on;
 }
 $("#todayBtn").onclick = () => { renderTodaySheet(); $("#todaySheet").showModal(); };
 $("#todayClose").onclick = $("#todayDone").onclick = () => $("#todaySheet").close();
 $("#todaySheet").addEventListener("click", e => {
   const st = e.target.closest("[data-step]");
-  if(st){ const [k, d] = st.dataset.step.split(":"); const g = goalCfg(); g[k] = Math.max(0, Math.min(k === "d" ? 5 : 30, g[k] + Number(d))); store.set("goal", g); store.set("prefsTs", Date.now()); cloudDirty(); checkGoal(); renderTodaySheet(); }
+  if(st){ const [k, d] = st.dataset.step.split(":"); const g = goalCfg(); g[k] = Math.max(0, Math.min(k === "d" ? 5 : k === "w" ? 20 : 30, g[k] + Number(d))); store.set("goal", g); if(k === "w" && addWords()) paintBadge(); store.set("prefsTs", Date.now()); cloudDirty(); checkGoal(); renderTodaySheet(); }
   if(e.target.closest("[data-close]")) $("#todaySheet").close();
 });
 $("#gR").onchange = e => { const g = goalCfg(); g.r = e.target.checked; store.set("goal", g); store.set("prefsTs", Date.now()); cloudDirty(); checkGoal(); renderTodaySheet(); };
@@ -1443,7 +1569,7 @@ function snapshot(){
     prefs, prefsTs: store.get("prefsTs", 0),
     tr: { queue: store.get("trQueue", null), idx: store.get("trIdx", 0) }, trTs: store.get("trTs", 0),
     history: store.get("history", []), mistakes: store.get("mistakes", []),
-    dialogs: store.get("genDialogs", []), rev: store.get("rev", {}), days: store.get("days", {}), cleared: store.get("cleared", 0),
+    dialogs: store.get("genDialogs", []), rev: store.get("rev", {}), days: store.get("days", {}), words: store.get("words", {}), cleared: store.get("cleared", 0),
   }, {});
 }
 function applySnapshot(x){
@@ -1454,6 +1580,7 @@ function applySnapshot(x){
   store.set("genDialogs", x.dialogs);
   store.set("rev", x.rev || {});
   store.set("days", x.days || {});
+  store.set("words", x.words || {});
   if(x.tr && x.tr.queue && x.tr.queue.length){ store.set("trQueue", x.tr.queue); store.set("trIdx", x.tr.idx || 0); store.set("trTs", x.trTs); }
   // show the new values
   if(!same(before.prefs, x.prefs)){
@@ -1474,7 +1601,7 @@ function applySnapshot(x){
     if($("#trResult").hidden) renderTr();
   }
   if(state.view === "stats") renderStats();
-  paintBadge(); paintToday();
+  addWords(); paintBadge(); paintToday();
   if(state.view === "rev" && rpos >= rq.length) revEmpty();
 }
 
@@ -1575,6 +1702,7 @@ async function bootCloud(){
 if(!synth) showToast("Этот браузер не умеет озвучивать текст. Откройте страницу в Chrome или Safari.");
 setMode(state.dmode); renderTr();
 paintAccess();
+addWords();
 paintBadge();
 paintToday();
 const openFromHash = () => { const h = location.hash.slice(1); if(TABS.includes(h) && h !== state.view) showView(h); };

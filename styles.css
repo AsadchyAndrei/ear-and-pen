@@ -375,9 +375,9 @@ body.phone #view-dict:not(.checked) .line.cur input{font-size:18px;padding:13px 
 .seg.mode button{font-family:var(--f-body);font-size:15px;font-weight:600;display:inline-flex;align-items:center;gap:7px;padding:8px 16px}
 .seg.mode svg{width:16px;height:16px}
 .modes label{gap:6px}
-.say{grid-column:3;display:flex;align-items:center;gap:10px;min-width:0}
-.say .txt,.say .txt-h{flex:1;min-width:0;font-size:17px;line-height:1.45}
-.say .txt-h{color:var(--muted);font-size:15px;font-style:italic}
+.sayrow{grid-column:3;display:flex;align-items:center;gap:10px;min-width:0}
+.sayrow .txt,.sayrow .txt-h{flex:1;min-width:0;font-size:17px;line-height:1.45}
+.sayrow .txt-h{color:var(--muted);font-size:15px;font-style:italic}
 .lines:not(.hidetext) .txt-h,.lines.hidetext .line:not(.done) .txt,.line.done .txt-h{display:none}
 .btn.mic{width:46px;height:46px;min-height:46px;padding:0;border-radius:50%;flex:none;background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .btn.mic svg{width:20px;height:20px}
@@ -395,9 +395,24 @@ body.phone #view-dict.speak .line{grid-template-columns:auto 1fr}
 body.phone #view-dict.speak .who{grid-column:1/-1}
 body.phone #view-dict.speak .ctrls{display:flex}
 body.phone #view-dict.speak .ctrls .slow{display:inline-flex}
-body.phone #view-dict.speak .say{grid-column:2}
+body.phone #view-dict.speak .sayrow{grid-column:2}
 body.phone #view-dict.speak .result,body.phone #view-dict.speak .heard{grid-column:1/-1}
 body.phone #view-dict.speak .line.cur{background:var(--sunk)}
 body.phone #view-dict.speak .line.cur.listening,body.phone #view-dict.speak .line.listening{background:var(--err-soft)}
 @media (max-width:560px){.kpis.k4{grid-template-columns:repeat(2,1fr)} .seg.mode button{padding:8px 14px}}
 @media (prefers-reduced-motion: reduce){.btn.mic.on{animation:none}}
+/* ---------- phrase cards ---------- */
+.rcard .ru.big{font-size:22px;font-weight:600;line-height:1.35}
+.rcard .answer{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.rcard .answer input{flex:1;min-width:200px}
+.rcard .learn{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border-radius:var(--r);background:var(--sunk)}
+.rcard .learn .en{font-size:22px;font-weight:700}
+.ctxline{font-size:15px;color:var(--muted);display:flex;gap:8px;align-items:center}
+.ctxline mark{background:var(--mark);color:var(--mark-ink);border-radius:3px;padding:0 2px}
+.words{margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
+.words summary{cursor:pointer;font-weight:600;padding:6px 0}
+.wlist{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column}
+.wlist li{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);min-width:0}
+.wlist li .t{flex:1;min-width:0}
+.wlist li .st{font-size:12px;color:var(--muted);white-space:nowrap}
+.wlist li .st.ok{color:var(--ok)}

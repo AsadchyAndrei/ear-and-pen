@@ -175,13 +175,18 @@
   <section class="desk" id="view-rev" role="tabpanel" aria-labelledby="tab-rev" hidden>
     <div class="row spread">
       <div>
-        <h2 class="revh">Повторение ошибок</h2>
+        <h2 class="revh">Повторение</h2>
         <p class="note" id="revSub"></p>
       </div>
       <span class="counter" id="revPos"></span>
     </div>
     <div class="revbar" id="revBar" hidden><i id="revFill"></i></div>
     <div id="revCard"></div>
+    <details class="words" id="wordsBox" hidden>
+      <summary id="wordsSum">Мой словарь</summary>
+      <p class="note">Выражения из пройденных диалогов. Каждый день добавляется несколько новых — сколько, задаётся в «Сегодня» (кольцо в шапке).</p>
+      <ul class="wlist" id="wordsList"></ul>
+    </details>
   </section>
 
   <!-- PROGRESS -->
@@ -221,6 +226,7 @@
       <div class="lbl">Цель на день</div>
       <div class="stepper"><span>Диалогов</span><div class="row"><button class="btn sq" type="button" data-step="d:-1" aria-label="Меньше диалогов">−</button><b id="gD" aria-live="polite">1</b><button class="btn sq" type="button" data-step="d:1" aria-label="Больше диалогов">+</button></div></div>
       <div class="stepper"><span>Переводов</span><div class="row"><button class="btn sq" type="button" data-step="t:-1" aria-label="Меньше переводов">−</button><b id="gT" aria-live="polite">5</b><button class="btn sq" type="button" data-step="t:1" aria-label="Больше переводов">+</button></div></div>
+      <div class="stepper"><span>Новых выражений</span><div class="row"><button class="btn sq" type="button" data-step="w:-1" aria-label="Меньше новых выражений">−</button><b id="gW" aria-live="polite">8</b><button class="btn sq" type="button" data-step="w:1" aria-label="Больше новых выражений">+</button></div></div>
       <label class="row note checkline"><input type="checkbox" id="gR"> Повторять все карточки на сегодня</label>
     </div>
     <div class="setblock">
