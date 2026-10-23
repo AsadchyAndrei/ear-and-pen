@@ -609,40 +609,63 @@ $("#dGen").onclick = async () => {
 /* ---------- your own voice: record each try and play it next to the speaker ---------- */
 const CAN_REC = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
 let mine = [], recFails = 0, soloRec = null;
-// MP4/AAC first: iPhone may record WebM but cannot always play it back
-const REC_TYPES = ["audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/aac", "audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
+// Safari: MP4/AAC (it may record WebM but not always play it back); others: WebM/Opus, which our server can send to Google as is
+const IS_SAFARI = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
+const REC_TYPES = IS_SAFARI ? ["audio/mp4", "audio/aac", "audio/webm;codecs=opus", "audio/webm"] : ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/webm", "audio/mp4"];
+// one audio context, started on the tap itself (iPhone only allows that from a tap)
+let actx = null;
+function audioCtx(){
+  try{ actx ||= new (window.AudioContext || window.webkitAudioContext)(); if(actx.state !== "running") actx.resume().catch(() => {}); }catch{ actx = null; }
+  return actx;
+}
 async function startRec(){
   const stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}});
   const type = REC_TYPES.find(t => MediaRecorder.isTypeSupported?.(t)) || "";
   const mr = new MediaRecorder(stream, type ? {mimeType: type} : undefined), chunks = [];
+  // raw sound straight from the microphone, next to the recording: sent for recognition and used to tell silence,
+  // so nothing depends on decoding the recorded file (Chrome reads its MP4 as empty, Safari may fail on its own file)
+  const live = {frames: [], rate: 0}; let src = null, proc = null;
+  try{
+    const ctx = actx || audioCtx();
+    if(ctx){
+      src = ctx.createMediaStreamSource(stream); proc = ctx.createScriptProcessor(4096, 1, 1); live.rate = ctx.sampleRate;
+      proc.onaudioprocess = e => live.frames.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+      src.connect(proc); proc.connect(ctx.destination);
+    }
+  }catch{ src = proc = null; }
   mr.ondataavailable = e => { if(e.data?.size) chunks.push(e.data); };
-  const done = new Promise(res => { mr.onstop = async () => {
+  const done = new Promise(res => { mr.onstop = () => {
+    try{ src?.disconnect(); proc?.disconnect(); }catch{}
     stream.getTracks().forEach(t => t.stop());
     const blob = chunks.length ? new Blob(chunks, {type: mr.mimeType || type || "audio/mp4"}) : null;
-    // how loud the finished recording is (measured on the file: live meters read zeros on iPhone)
-    if(blob) blob.peak = await loudness(blob);
+    if(blob){ blob.live = livePCM(live); blob.peak = blob.live ? blob.live.peak : -1; }
     res(blob);
   }; });
   mr.start(250);
   const guard = setTimeout(() => { if(mr.state !== "inactive") mr.stop(); }, 20000);
   return { stop(){ clearTimeout(guard); if(mr.state !== "inactive") mr.stop(); return done; } };
 }
-// loudest sample, 0…1; -1 when the file could not be decoded (then we trust the recording)
-async function loudness(blob){
-  try{
-    const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext; if(!Ctx) return -1;
-    const ctx = new Ctx(1, 44100, 44100), data = await blob.arrayBuffer();
-    const audio = await new Promise((res, rej) => { const p = ctx.decodeAudioData(data, res, rej); if(p?.then) p.then(res, rej); });
-    let peak = 0;
-    for(let c = 0; c < audio.numberOfChannels; c++){ const ch = audio.getChannelData(c); for(let k = 0; k < ch.length; k += 4) peak = Math.max(peak, Math.abs(ch[k])); }
-    return peak;
-  }catch{ return -1; }
+// raw frames → 16 kHz 16-bit PCM and the loudest sample; null when the microphone gave us nothing to measure
+function livePCM({frames, rate}){
+  const n = frames.reduce((k, f) => k + f.length, 0);
+  if(!rate || n < rate * 0.3) return null;
+  const all = new Float32Array(n); let o = 0; for(const f of frames){ all.set(f, o); o += f.length; }
+  const step = rate / 16000, m = Math.floor(n / step), out = new Int16Array(m);
+  let peak = 0;
+  for(let k = 0; k < m; k++){
+    const from = Math.floor(k * step), to = Math.max(from + 1, Math.floor((k + 1) * step));
+    let v = 0; for(let j = from; j < to; j++) v += all[j];
+    v /= (to - from); peak = Math.max(peak, Math.abs(v));
+    out[k] = Math.max(-32768, Math.min(32767, Math.round(v * 32767)));
+  }
+  return {pcm: out.buffer, peak, secs: n / rate};
 }
+// silent only when we could really measure it
 const silent = blob => !blob || blob.size < 600 || (blob.peak >= 0 && blob.peak < 0.01);
-const recInfo = blob => blob ? `${(blob.type || "?").split(";")[0]}, ${Math.round(blob.size / 1024)} КБ, уровень ${blob.peak < 0 ? "не измерен" : Math.round(blob.peak * 100) + "%"}` : "файла нет";
+const recInfo = blob => blob ? `${(blob.type || "?").split(";")[0]}, ${Math.round(blob.size / 1024)} КБ, уровень ${blob.peak < 0 ? "не измерен" : Math.round(blob.peak * 100) + "%"}${blob.live ? "" : `, звук с микрофона: ${actx ? actx.state : "нет"}`}` : "файла нет";
 // record without recognition (no speech recognition here, or it clashes with recording): tap to start, tap to stop
 async function recordOnly(i, btn, out){
-  stopSpeech(); stopListening();
+  audioCtx(); stopSpeech(); stopListening();
   let rec;
   try{ rec = await startRec(); }catch(e){ out.classList.add("err"); out.textContent = e?.name === "NotAllowedError" ? SR_ERR["not-allowed"] : "Не получилось включить микрофон."; return; }
   out.classList.remove("err"); out.textContent = "Идёт запись — скажите фразу и нажмите ещё раз.";
@@ -941,7 +964,7 @@ async function toPCM16(blob){
 const STT_ERR = {sign_in_required: "Распознавание на сервере — после входа.", not_allowed: "Распознавание на сервере доступно не всем аккаунтам.", daily_limit: "На сегодня лимит распознавания исчерпан.", rate_limited: "Слишком часто — подождите минуту.", too_short: "Слишком коротко — скажите фразу целиком.", too_large: "Слишком длинная запись — скажите одну фразу.", stt_failed: "Сервис распознавания сейчас недоступен.", stt_not_configured: "Распознавание на сервере ещё не подключено."};
 // tap: record; tap again: stop, send, compare
 async function hearServer(expected, btn, out){
-  stopSpeech();
+  audioCtx(); stopSpeech();
   let rec;
   try{ rec = await startRec(); }catch(e){ out.classList.add("err"); out.textContent = e?.name === "NotAllowedError" ? SR_ERR["not-allowed"] : "Не получилось включить микрофон."; return null; }
   btn.classList.add("on"); btn.setAttribute("aria-pressed", "true");
@@ -955,13 +978,25 @@ async function hearServer(expected, btn, out){
   out.textContent = "Распознаю…";
   let alts;
   try{
-    const {pcm} = await toPCM16(blob);
-    const res = await fetch(API_URL.replace(/\/$/, "") + "/stt?l=" + encodeURIComponent(state.accent || "en-US"), { method: "POST", headers: { ...(await authHeaders()), "Content-Type": "application/octet-stream" }, body: pcm });
+    // raw sound if we have it; otherwise WebM/Ogg Opus as is; otherwise decode the file here
+    let body, enc;
+    if(blob.live){ body = blob.live.pcm; enc = "l16"; }
+    else if(/webm|ogg/.test(blob.type)){ body = blob; enc = blob.type.includes("ogg") ? "ogg" : "webm"; }
+    else {
+      try{ body = (await toPCM16(blob)).pcm; enc = "l16"; }
+      catch(e){ throw {code: "decode", detail: `${e?.name || "ошибка"}: ${recInfo(blob)}`}; }
+    }
+    let res;
+    try{ res = await fetch(API_URL.replace(/\/$/, "") + `/stt?l=${encodeURIComponent(state.accent || "en-US")}&enc=${enc}`, { method: "POST", headers: { ...(await authHeaders()), "Content-Type": "application/octet-stream" }, body }); }
+    catch(e){ throw {code: "network", detail: e?.message || ""}; }
     const j = await res.json().catch(() => ({}));
-    if(!res.ok) throw {code: j.error || "stt_failed"};
+    if(!res.ok) throw {code: j.error || "stt_failed", detail: j.upstream ? `${j.upstream.status} ${j.upstream.message || ""}` : `HTTP ${res.status}`};
     alts = j.alts || [];
   }catch(e){
-    out.classList.add("err"); out.textContent = STT_ERR[e?.code] || (e?.code ? "Не получилось распознать: " + e.code : "Не получилось распознать — нет связи с сервером.");
+    out.classList.add("err");
+    out.textContent = e?.code === "decode" ? `Не получилось обработать запись (${e.detail}).`
+      : e?.code === "network" ? "Не получилось распознать — нет связи с сервером."
+      : (STT_ERR[e?.code] || "Не получилось распознать: " + (e?.code || e?.message || "ошибка")) + (e?.detail && !STT_ERR[e?.code] ? ` (${e.detail})` : "");
     const r0 = {ops: [], pct: 0, heard: "", blob, failed: true}; return r0;
   }
   if(!alts.length){ out.classList.add("err"); out.textContent = "Речь не распознана. Скажите фразу чуть громче и чётче."; return {ops: [], pct: 0, heard: "", blob, failed: true}; }

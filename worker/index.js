@@ -116,7 +116,8 @@ async function tts(request, url, env, ctx, headers, ip) {
    The same Google key as the voice (it must also allow the Speech-to-Text API). */
 const sttHits = new Map();
 const STT_MODELS = new Set(["latest_long", "latest_short", "default", "command_and_search", "video", "phone_call"]);
-const MAX_STT = 16000 * 2 * 20; // 20 seconds
+const MAX_STT = 16000 * 2 * 20; // 20 seconds of raw 16 kHz sound (compressed WebM/Ogg is much smaller)
+const STT_ENC = { l16: { encoding: "LINEAR16", sampleRateHertz: 16000 }, webm: { encoding: "WEBM_OPUS", sampleRateHertz: 48000 }, ogg: { encoding: "OGG_OPUS", sampleRateHertz: 48000 } };
 async function stt(request, url, env, headers, ip) {
   if (!env.GOOGLE_TTS_KEY) return json({ error: "stt_not_configured" }, 503, headers);
   const me = await who(request, env);
@@ -127,8 +128,10 @@ async function stt(request, url, env, headers, ip) {
   const l = url.searchParams.get("l") || "en-US";
   if (!TTS_LOCALES.has(l)) return json({ error: "bad_request" }, 400, headers);
   const model = STT_MODELS.has(url.searchParams.get("m")) ? url.searchParams.get("m") : (env.STT_MODEL || "default");
+  const enc = STT_ENC[url.searchParams.get("enc") || "l16"];
+  if (!enc) return json({ error: "bad_request" }, 400, headers);
   const buf = new Uint8Array(await request.arrayBuffer());
-  if (buf.length < 3200 || buf.length > MAX_STT) return json({ error: buf.length < 3200 ? "too_short" : "too_large" }, 400, headers);
+  if (buf.length < (enc.encoding === "LINEAR16" ? 3200 : 600) || buf.length > MAX_STT) return json({ error: buf.length < 3200 ? "too_short" : "too_large" }, 400, headers);
   if (!(await useQuota(env.AUDIO, me.uid, "stt", Number(env.STT_DAILY_LIMIT || 400)))) return json({ error: "daily_limit" }, 429, headers);
   let bin = "";
   for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
@@ -136,7 +139,7 @@ async function stt(request, url, env, headers, ip) {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Goog-Api-Key": String(env.GOOGLE_TTS_KEY).trim() },
     body: JSON.stringify({
-      config: { encoding: "LINEAR16", sampleRateHertz: 16000, languageCode: l, maxAlternatives: 5, enableAutomaticPunctuation: true, model, ...(model === "phone_call" || model === "video" ? { useEnhanced: true } : {}) },
+      config: { ...enc, languageCode: l, maxAlternatives: 5, enableAutomaticPunctuation: true, model, ...(model === "phone_call" || model === "video" ? { useEnhanced: true } : {}) },
       audio: { content: btoa(bin) },
     }),
   });
