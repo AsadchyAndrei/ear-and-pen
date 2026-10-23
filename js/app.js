@@ -280,7 +280,8 @@ function prefetch(lines){
 let playingAll = false;
 const PLAY_I = `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>`;
 const PAUSE_I = `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>`;
-const MIC_I = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="5.5" y="1.75" width="5" height="8" rx="2.5"/><path d="M3.25 7.5a4.75 4.75 0 0 0 9.5 0M8 12.25v2"/></svg>`;
+const STOP_I = `<svg class="ic-stop" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>`;
+const MIC_I = `<svg class="ic-mic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="5.5" y="1.75" width="5" height="8" rx="2.5"/><path d="M3.25 7.5a4.75 4.75 0 0 0 9.5 0M8 12.25v2"/></svg>`;
 const TURTLE = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 10.5h10a5 4.2 0 0 0-10 0z"/><path d="M12.5 9.8c.6-.9 1.4-1.3 2.2-1"/><path d="M4.5 10.5v2M10.5 10.5v2"/></svg>`;
 function paintPlayAll(){
   const b = $("#dPlayAll"); b.setAttribute("aria-pressed", String(playingAll));
@@ -360,6 +361,7 @@ function renderDialog(){
   const d = dialogs[dIdx];
   stopSpeech(); stopListening(); dChecked = false; dRecorded = false; sBest = []; sRecorded = false; mine = [];
   $("#view-dict").classList.remove("checked");
+  $("#dCheck").textContent = "Проверить";
   paintEyebrow();
   $("#dTitle").textContent = d.title;
   $("#dContext").textContent = d.context_ru || "";
@@ -368,12 +370,12 @@ function renderDialog(){
   $("#lines").classList.toggle("hidetext", speakMode && !$("#sText").checked);
   $("#lines").innerHTML = d.lines.map((l,i) => { const who = sp[l.s] || l.s; return `
     <div class="line${speakMode ? " sp" : ""}" data-i="${i}">
-      <div class="who ${l.s==="B"?"B":""}"><b aria-hidden="true">${l.s==="B"?"B":"A"}</b><span>${esc(who)}</span><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span></div>
+      <div class="who ${l.s==="B"?"B":""}"><b aria-hidden="true">${l.s==="B"?"B":"A"}</b><span title="${esc(who)}">${esc(who)}</span><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span></div>
       <div class="ctrls">
         <button class="btn play" type="button" title="Прослушать" aria-label="Прослушать строку ${i+1}">${PLAY_I}</button>
         <button class="btn slow" type="button" title="Медленно" aria-label="Медленно, строка ${i+1}">${TURTLE}</button>
       </div>
-      ${speakMode ? `<div class="sayrow"><span class="txt" lang="en">${esc(l.text)}</span><span class="txt-h">Текст скрыт — повторите на слух</span><button class="btn mic" type="button" title="Сказать" aria-label="Сказать строку ${i+1}" aria-pressed="false"${SR || CAN_REC ? "" : " disabled"}>${MIC_I}</button></div>` : `<input type="text" id="dl-${dIdx}-${i}" aria-label="Строка ${i+1}, ${esc(who)}: что вы услышали" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" lang="en" enterkeyhint="${i === d.lines.length - 1 ? "done" : "next"}" placeholder="Строка ${i+1}…">`}
+      ${speakMode ? `<div class="sayrow"><span class="txt" lang="en">${esc(l.text)}</span><span class="txt-h">Текст скрыт — повторите на слух</span><button class="btn mic" type="button" title="Сказать" aria-label="Сказать строку ${i+1}" aria-pressed="false"${SR || CAN_REC ? "" : " disabled"}>${MIC_I}${STOP_I}</button></div>` : `<input type="text" id="dl-${dIdx}-${i}" aria-label="Строка ${i+1}, ${esc(who)}: что вы услышали" autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false" lang="en" enterkeyhint="${i === d.lines.length - 1 ? "done" : "next"}" placeholder="Строка ${i+1}…">`}
     </div>`; }).join("");
   paintSpeakDone();
   $("#dSummary").hidden = $("#dExplainWrap").hidden = $("#dVocabWrap").hidden = $("#dPartial").hidden = true;
@@ -535,6 +537,7 @@ function checkDictation(force){
   const errCount = results.reduce((k, r) => k + r.ops.filter(o => o.t !== "eq").length, 0);
   const skipped = n - results.length, counts = filled >= half;
   dChecked = true; lastDict = {d, results, avg};
+  $("#dCheck").textContent = "Проверить снова";
   $("#view-dict").classList.add("checked");
   updateBar();
   // one result per dialogue, and only when at least half of it was done
@@ -904,9 +907,14 @@ function pairs(n){
 const ORD = {one: "first", two: "second", three: "third", five: "fifth", eight: "eighth", nine: "ninth", twelve: "twelfth"};
 const ordinal = w => w.replace(/(\w+)$/, x => ORD[x] || (x.endsWith("y") ? x.slice(0, -1) + "ieth" : x + "th"));
 const ABBR = [[/\ba\.\s?m\b\.?/g, "am"], [/\bp\.\s?m\b\.?/g, "pm"], [/\bdr\./g, "doctor"], [/\bmr\./g, "mister"], [/\bmrs\./g, "missus"], [/\bms\./g, "miz"], [/\bok\b/g, "okay"], [/\bst\./g, "street"], [/\bave\./g, "avenue"], [/\btv\b/g, "tv"]];
+// "there's" and "there is" are the same thing said (recognition writes either)
+const CONTR = [[/\bwon't\b/g, "will not"], [/\bcan't\b/g, "can not"], [/\bcannot\b/g, "can not"], [/\bshan't\b/g, "shall not"], [/\blet's\b/g, "let us"],
+  [/n't\b/g, " not"], [/'re\b/g, " are"], [/'ve\b/g, " have"], [/'ll\b/g, " will"], [/'m\b/g, " am"], [/'d\b/g, " would"],
+  [/\b(it|that|there|here|what|where|who|how|he|she|this|that)'s\b/g, "$1 is"]];
 function spNorm(text, style){
   let s = String(text).replace(/[’‘`´]/g, "'").toLowerCase();
   for(const [re, to] of ABBR) s = s.replace(re, to);
+  for(const [re, to] of CONTR) s = s.replace(re, to);
   s = s.replace(/(\d),(\d{3})/g, "$1$2")
     .replace(/\$(\d+(?:\.\d+)?)/g, "$1 dollars")
     .replace(/(\d)\s?%/g, "$1 percent")
@@ -928,14 +936,36 @@ function scoreSpeech(expected, alts){
     if(!best || r.pct > best.pct) best = {...r, heard, style};
   }
   if(!best) return {ops: [], pct: 0, heard: ""};
-  // show the line's own words (capitals, punctuation) when the numbers did not change the word count
-  const orig = toks(String(expected).replace(/[-–—/]/g, " ")).filter(w => norm(w, false));
-  const normed = toks(spNorm(expected, best.style)).filter(w => norm(w, false));
-  if(orig.length === normed.length){
-    let k = 0;
-    best.ops = best.ops.map(o => o.t === "extra" ? o : o.t === "eq" ? {...o, e: orig[k], w: orig[k++]} : {...o, e: orig[k++]});
-  }
+  best.ops = toOwnWords(expected, best.style, best.ops) || best.ops;
   return best;
+}
+// show the line's own words (capitals, punctuation, "there's") instead of the normalised ones:
+// each original word owns the normalised words it became ("there's" → "there is", "$40" → "forty dollars")
+function toOwnWords(expected, style, ops){
+  const orig = toks(String(expected).replace(/[-–—/]/g, " ")).filter(w => norm(w, false));
+  const owner = [];
+  orig.forEach((w, k) => { for(const x of toks(spNorm(w, style))) if(norm(x, false)) owner.push(k); });
+  const total = toks(spNorm(expected, style)).filter(w => norm(w, false)).length;
+  if(owner.length !== total) return null;
+  const out = []; let j = 0, cur = null;
+  const flush = () => {
+    if(!cur) return;
+    const word = orig[cur.k], parts = cur.parts;
+    if(parts.every(o => o.t === "eq")) out.push({t: "eq", e: word, w: word});
+    else { const heard = parts.filter(o => o.w).map(o => o.w).join(" "); out.push(heard ? {t: "sub", e: word, w: heard} : {t: "miss", e: word}); }
+    cur = null;
+  };
+  // which original word the next expected-side op belongs to
+  const nextOwner = (i, jj) => { for(let x = i; x < ops.length; x++) if(ops[x].t !== "extra") return owner[jj]; return -1; };
+  for(let i = 0; i < ops.length; i++){
+    const o = ops[i];
+    if(o.t === "extra"){ if(cur && nextOwner(i + 1, j) === cur.k) cur.parts.push(o); else { flush(); out.push(o); } continue; }
+    const k = owner[j++];
+    if(!cur || cur.k !== k){ flush(); cur = {k, parts: []}; }
+    cur.parts.push(o);
+  }
+  flush();
+  return out;
 }
 const SR_ERR = {
   "not-allowed": "Нет доступа к микрофону. Разрешите микрофон для этого сайта в настройках браузера.",
@@ -1320,22 +1350,32 @@ function renderStats(){
   $("#trend").className = trend.length ? "trend" : "";
   $("#trend").innerHTML = trend.join("") || (h.length ? `<p class="note">График появится после пяти занятий одного вида.</p>` : "");
   const f = $("#mFilter").value;
-  mShown = store.get("mistakes", []).filter(x => f === "all" || x.kind === f).slice(0, 60);
-  $("#mList").innerHTML = mShown.length ? mShown.map((x, i) => {
-    const ctx = ctxOf(x), why = whyOf(x);
+  // one card per sentence: all the words missed in it together (the review works the same way)
+  const groups = new Map();
+  for(const x of store.get("mistakes", [])){
+    if(f !== "all" && x.kind !== f) continue;
+    const key = idOf(x) || `${x.kind}:${x.t}`;
+    const g = groups.get(key) || {x, items: []};
+    if(!g.items.some(it => it.better === x.better && it.yours === x.yours)) g.items.push(x);
+    groups.set(key, g);
+  }
+  mShown = [...groups.values()].slice(0, 40);
+  const KIND_RU = {dict: "диктант", speak: "произношение", tr: "перевод"};
+  $("#mList").innerHTML = mShown.length ? mShown.map((g, i) => {
+    const x = g.x, ctx = ctxOf(x);
     return `<li class="mcard" data-i="${i}">
-      <div class="pair"><del class="w" lang="en">${esc(x.yours)}</del><span aria-hidden="true">→</span><ins class="w" lang="en">${esc(x.better)}</ins>${x.type ? `<span class="chip">${esc(TYPE_RU[x.type] || x.type)}</span>` : ""}</div>
-      ${why ? `<div class="why">${esc(why)}</div>` : ""}
-      ${whenOf(x) ? `<div class="when">${whenOf(x)}</div>` : ""}
-      ${ctx ? `<div class="ctx"><span lang="en">${esc(ctx)}</span>${playBtn(ctx)}</div>` : x.ru ? `<div class="ctx"><span lang="ru">${esc(x.ru)}</span></div>` : ""}
-      ${ctx && x.kind === "speak" ? `<div class="acts"><button class="btn" type="button" data-sdrill${SR ? "" : " disabled"}>${MIC_I}Сказать ещё раз</button></div>` : ctx ? `<div class="acts"><button class="btn" type="button" data-drill>Повторить на слух</button></div>` : x.ru ? `<div class="acts"><button class="btn" type="button" data-again>Перевести снова</button></div>` : ""}
+      <div class="head"><span class="chip">${esc(KIND_RU[x.kind] || "")}</span>${whenOf(x) ? `<span class="when">${whenOf(x)}</span>` : ""}</div>
+      ${ctx ? `<div class="ctx main"><span lang="en">${esc(ctx)}</span>${playBtn(ctx)}</div>` : x.ru ? `<div class="ctx main"><span lang="ru">${esc(x.ru)}</span></div>` : ""}
+      <div class="pairs">${g.items.slice(0, 8).map(it => { const why = whyOf(it); return `<div><div class="pair"><del class="w" lang="en">${esc(it.yours)}</del><span aria-hidden="true">→</span><ins class="w" lang="en">${esc(it.better)}</ins>${it.kind === "tr" && it.type ? `<span class="chip">${esc(TYPE_RU[it.type] || it.type)}</span>` : ""}</div>${why ? `<div class="why">${esc(why)}</div>` : ""}</div>`; }).join("")}${g.items.length > 8 ? `<div class="why">и ещё ${g.items.length - 8}</div>` : ""}</div>
+      ${ctx && x.kind === "speak" ? `<div class="acts"><button class="btn" type="button" data-sdrill${SR || serverSTT() ? "" : " disabled"}>${MIC_I}${STOP_I}Сказать ещё раз</button></div>` : ctx ? `<div class="acts"><button class="btn" type="button" data-drill>Повторить на слух</button></div>` : x.ru ? `<div class="acts"><button class="btn" type="button" data-again>Перевести снова</button></div>` : ""}
     </li>`; }).join("")
     : `<li class="empty">Здесь появятся ваши ошибки после первых проверок — по ним удобно повторять.</li>`;
 }
 // practise a mistake right here: hear the sentence again and type it, or translate the sentence again
 $("#mList").addEventListener("click", e => {
   const card = e.target.closest(".mcard"); if(!card) return;
-  const x = mShown[+card.dataset.i]; if(!x) return;
+  const g = mShown[+card.dataset.i]; if(!g) return;
+  const x = g.x;
   const ctx = ctxOf(x);
   if(e.target.closest("[data-drill]")){
     const box = document.createElement("div"); box.className = "drill";
@@ -1360,7 +1400,8 @@ $("#mList").addEventListener("click", e => {
     card.querySelector(".ctx").hidden = false;
   }
   if(e.target.closest("[data-again]")){
-    trQueue.splice(trIdx, 0, {ru: x.ru, en: x.en || x.better, focus: "", hint_ru: [x.better && `Обратите внимание: ${x.better}.`, x.why].filter(Boolean).join(" "), review: true});
+    const betters = [...new Set(g.items.map(it => it.better).filter(Boolean))];
+    trQueue.splice(trIdx, 0, {ru: x.ru, en: g.items.find(it => it.en)?.en || x.better, focus: "", hint_ru: [betters.length && `Обратите внимание: ${betters.join(", ")}.`, x.why].filter(Boolean).join(" "), review: true});
     renderTr(); saveTr(); showView("tr");
   }
 });
@@ -1460,7 +1501,7 @@ function renderRev(){
       <div class="en" lang="en">${esc(it.text)}</div>
       ${it.frags.length ? `<div class="focus">В прошлый раз не распознались: ${it.frags.map(f => `<ins class="w" lang="en">${esc(f.better)}</ins>`).join(", ")}</div>` : ""}
       <div class="listen"><button class="btn big" id="rPlay" type="button">${PLAY_I}Слушать</button><button class="btn big" id="rSlow" type="button">${TURTLE}Медленно</button></div>
-      <div class="row" id="rActs"><button class="btn mic big" id="rMic" type="button" aria-pressed="false">${MIC_I}Сказать</button><button class="btn ghost" id="rSkip" type="button">Пропустить</button></div>
+      <div class="row" id="rActs"><button class="btn mic big" id="rMic" type="button" aria-pressed="false">${MIC_I}${STOP_I}Сказать</button><button class="btn ghost" id="rSkip" type="button">Пропустить</button></div>
       <div class="heard" id="rHeard" aria-live="polite"></div>
       <div id="rRes"></div></div>`;
     $("#rPlay").onclick = () => speakCtx(it.text);
@@ -1632,7 +1673,7 @@ function renderWord(it, card){
   card.innerHTML = `<div class="rcard">
     <div class="kind"><span class="chip">выражение</span><span class="note">Как это по-английски?</span></div>
     <div class="ru big" lang="ru">${esc(it.ru)}</div>
-    <div class="answer"><input type="text" id="rIn" aria-label="Выражение на английском" placeholder="По-английски…" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" lang="en" enterkeyhint="done">${SR ? `<button class="btn mic" id="rMic" type="button" title="Сказать" aria-label="Сказать вслух" aria-pressed="false">${MIC_I}</button>` : ""}</div>
+    <div class="answer"><input type="text" id="rIn" aria-label="Выражение на английском" placeholder="По-английски…" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" lang="en" enterkeyhint="done">${SR ? `<button class="btn mic" id="rMic" type="button" title="Сказать" aria-label="Сказать вслух" aria-pressed="false">${MIC_I}${STOP_I}</button>` : ""}</div>
     <div class="heard" id="rHeard" aria-live="polite"></div>
     <div class="row" id="rActs"><button class="btn primary" id="rCheck" type="button">Проверить</button><button class="btn" id="rGive" type="button">Не помню</button><button class="btn ghost" id="rSkip" type="button">Пропустить</button></div>
     <div id="rRes"></div></div>`;

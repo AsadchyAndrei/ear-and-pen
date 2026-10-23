@@ -139,7 +139,7 @@ nav.tabs button[aria-selected=true]{color:var(--fg);border-color:var(--accent)}
 .line{display:grid;grid-template-columns:auto auto 1fr;gap:6px 12px;align-items:center;padding:10px 8px 10px 10px;border-radius:var(--r);border-left:3px solid transparent;transition:background .15s}
 .line.cur{border-left-color:var(--accent)}
 .line.playing{background:var(--accent-soft)}
-.who{font-size:13px;font-weight:600;width:104px;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.who{font-size:13px;font-weight:600;width:132px;color:var(--fg);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px}
 .who b{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:5px;background:var(--fg);color:var(--bg);font-size:11px;flex:none}
 .who.B b{background:var(--accent);color:var(--accent-ink)}
 /* "now playing": three small bars next to the speaker */
@@ -438,3 +438,32 @@ body.phone #view-dict.speak .mine{grid-column:1/-1}
 .toast.upd{z-index:31}
 #sWho{color:var(--fg)}
 .micsel select{max-width:220px;padding:4px 8px;font-size:14px}
+/* ---------- audit fixes: press feedback, states ---------- */
+.btn{transition:background-color .12s,border-color .12s,transform .06s,filter .12s}
+.btn:not([disabled]):active{transform:translateY(1px) scale(.98);filter:brightness(.94)}
+.btn.primary:not([disabled]):not([data-locked]):hover{background:color-mix(in srgb,var(--accent) 86%,#000);border-color:color-mix(in srgb,var(--accent) 86%,#000)}
+.seg button:not([aria-pressed=true]):hover{background:var(--sunk)}
+.seg button:active{filter:brightness(.94)}
+@media (prefers-reduced-motion: reduce){.btn{transition:none}.btn:not([disabled]):active{transform:none}}
+body.phone .kbdhint{display:none}
+#view-dict.checked #dPeek{display:none}
+/* microphone: a stop sign while recording; only the current line's mic is filled */
+.btn.mic .ic-stop{display:none}
+.btn.mic.on .ic-stop{display:block}
+.btn.mic.on .ic-mic{display:none}
+.line:not(.cur) .btn.mic:not(.on):not(:disabled){background:var(--surface);color:var(--accent);border-color:var(--accent)}
+/* speaking on a phone: the phrase gets the full width, buttons go under it */
+body.phone #view-dict.speak .line{grid-template-columns:1fr auto}
+body.phone #view-dict.speak .who{grid-column:1/-1;grid-row:1}
+body.phone #view-dict.speak .sayrow{display:contents}
+body.phone #view-dict.speak .sayrow .txt,body.phone #view-dict.speak .sayrow .txt-h{grid-column:1/-1;grid-row:2}
+body.phone #view-dict.speak .ctrls{grid-column:1;grid-row:3;align-self:center}
+body.phone #view-dict.speak .sayrow .mic{grid-column:2;grid-row:3}
+/* mistakes grouped by sentence */
+.mcard .pairs{display:flex;flex-direction:column;gap:6px}
+.mcard .pairs .pair{font-size:15px}
+.mcard .pairs .why{font-size:13px;color:var(--muted);margin-left:2px}
+.mcard .head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.mcard .ctx.main{font-size:15px;color:var(--fg)}
+.danger{margin-top:22px;padding-top:12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.danger #mClear{color:var(--muted);font-weight:500}
