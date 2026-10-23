@@ -607,3 +607,6 @@ body.has-sess{padding-bottom:110px}
 .civsheet .civtype input[type=text]{width:auto;flex:1;min-width:0} .civtype .btn{flex:none}
 .civhint{margin:6px 0 0;font-size:13px}
 .civsheet a{color:var(--accent)}
+.civlist li{align-items:flex-start}
+.civlist li > .btn, .civq > .btn{flex:none;width:36px;height:36px;min-width:36px;min-height:36px;padding:0}
+.civlist li > span{padding-top:6px;min-width:0;flex:1}

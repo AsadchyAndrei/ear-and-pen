@@ -2244,7 +2244,7 @@ function civShow(q){
   $("#civRes").hidden = true; $("#civNextRow").hidden = !(!ready && !civEx);
   $("#civNext").textContent = "Следующий вопрос →";
   $("#civSum").hidden = true; $("#civCard").hidden = false;
-  stopSpeech(); setTimeout(() => $("#civPlay").click(), 120);
+  stopSpeech();
 }
 $("#civText").onclick = () => $("#civText").classList.remove("hid");
 document.addEventListener("click", e => { if(e.target.closest("#civToState")) civOpenOpts(true); });
@@ -2379,14 +2379,14 @@ $("#rdMic").onclick = async () => {
 };
 $("#rdNext").onclick = () => { if(rd.pass || rd.i >= 2) rdRound(); else { rd.i++; rdShow(); } };
 function wrRound(){ wr = {list: shuffle3(CIV_WRITE), i: 0, pass: false}; wrShow(); }
-function wrShow(auto = true){
+function wrShow(){
   const t = wr.list[wr.i];
   $("#wrMeta").textContent = `Предложение ${wr.i + 1} из 3`;
   $("#wrStat").textContent = wr.pass ? "сдано ✓" : "";
   $("#wrHear").dataset.say = t;
   $("#wrIn").value = ""; $("#wrIn").disabled = false; $("#wrCheck").disabled = false;
   $("#wrOut").textContent = ""; $("#wrNextRow").hidden = true;
-  if(auto){ stopSpeech(); setTimeout(() => $("#wrHear").click(), 120); }
+  stopSpeech();
   if(!isPhone()) setTimeout(() => $("#wrIn").focus(), 150);
 }
 const wrNorm = t => spNorm(t).replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(Boolean).join(" ");
@@ -2412,7 +2412,7 @@ function civTab(t){
   stopSpeech(); stopListening();
   if(t === "q" && !civCur) civSetMode(civMode);
   if(t === "r" && !rd) rdRound();
-  if(t === "w") { if(!wr) wrRound(); else if(!$("#wrIn").disabled) wrShow(false); }
+  if(t === "w") { if(!wr) wrRound(); else if(!$("#wrIn").disabled) wrShow(); }
 }
 $("#civTabs").onclick = e => { const b = e.target.closest("button"); if(b) civTab(b.dataset.t); };
 function openCiv(tab = "q"){
