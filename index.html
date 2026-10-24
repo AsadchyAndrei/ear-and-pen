@@ -442,12 +442,14 @@
 <dialog class="sheet" id="iosSheet" aria-labelledby="iosTitle">
   <div class="sheet-in">
     <div class="row spread"><h2 id="iosTitle">Установить на iPhone</h2><button class="btn ghost" id="iosClose" type="button" aria-label="Закрыть">✕</button></div>
+    <p class="note" id="iosWhy" hidden>Отлично позанимались! Поставьте Ear &amp; Pen на экран «Домой»: откроется в один тап, на весь экран, без адресной строки, будет работать без интернета и сможет напоминать о занятии.</p>
     <ol class="steps">
-      <li>Откройте этот сайт в <b>Safari</b>.</li>
-      <li>Нажмите <b>Поделиться</b> — квадрат со стрелкой вверх.</li>
+      <li>Откройте этот сайт в <b>Safari</b>. Если он открыт внутри Telegram, Instagram или другого приложения — нажмите <b>•••</b> или значок компаса → <b>Открыть в Safari</b>.</li>
+      <li>Нажмите <b>Поделиться</b> — квадрат со стрелкой вверх (внизу экрана или в меню <b>•••</b>).</li>
       <li>Выберите <b>На экран «Домой»</b> → <b>Добавить</b>.</li>
     </ol>
-    <p class="note">Приложение откроется на весь экран и будет работать без интернета. В установленном приложении войдите в аккаунт — прогресс подтянется из облака.</p>
+    <p class="note">В установленном приложении войдите в тот же аккаунт — прогресс подтянется из облака.</p>
+    <div class="row" id="iosActs" hidden><button class="btn" id="iosLater" type="button">Не сейчас</button><button class="btn primary" id="iosOk" type="button">Понятно</button></div>
   </div>
 </dialog>
 

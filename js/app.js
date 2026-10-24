@@ -979,6 +979,7 @@ function finishSession(){
   sess = null; paintSess();
   if(all) showToast(done === all ? "Занятие завершено — отличная работа!" : `Занятие завершено: выполнено ${done} из ${all}.`);
   paintGoal(); checkGoal();
+  setTimeout(maybeAskInstall, 2500);
 }
 $("#sessStart").onclick = startSession;
 $("#sbNext").onclick = () => { sess.i++; goStep(); };
@@ -1623,6 +1624,7 @@ function pushResult(kind, pct, extra){
   if((kind === "dict" || kind === "speak") && addWords()) paintBadge();
   setTimeout(() => { sessHit(kind, extra?.d); paintGoal(); }, 0);
   setTimeout(checkGoal, 0);
+  setTimeout(maybeAskInstall, 2500);
   try{ navigator.storage?.persist?.(); }catch{}
 }
 function saveMistakes(list){
@@ -2521,9 +2523,24 @@ addEventListener("appinstalled", () => { $("#installBtn").hidden = true; install
 $("#installBtn").hidden = standalone() || !isIOS();
 $("#installBtn").onclick = async () => {
   if(installEvt){ installEvt.prompt(); try{ await installEvt.userChoice; }catch{} installEvt = null; $("#installBtn").hidden = true; return; }
+  $("#iosWhy").hidden = true; $("#iosActs").hidden = true;
   $("#iosSheet").showModal();
 };
 $("#iosClose").onclick = () => $("#iosSheet").close();
+// ask to install at a good moment: right after a finished exercise, not on arrival; at most 3 times, 3+ days apart
+const INSTALL_ASKS = 3, INSTALL_GAP = 3 * 864e5;
+function maybeAskInstall(){
+  if(standalone() || !(isIOS() || installEvt)) return;
+  const a = store.get("installAsk", {n: 0, last: 0});
+  if(a.n >= INSTALL_ASKS || Date.now() - a.last < INSTALL_GAP) return;
+  if(sess || document.querySelector("dialog[open]") || listening || soloRec) return;
+  store.set("installAsk", {n: a.n + 1, last: Date.now()});
+  if(installEvt){ showToast("Установите Ear & Pen — откроется в один тап и будет работать без интернета.", {label: "Установить", fn: () => $("#installBtn").click()}, 12000); return; }
+  $("#iosWhy").hidden = false; $("#iosActs").hidden = false;
+  $("#iosSheet").showModal();
+}
+$("#iosLater").onclick = () => $("#iosSheet").close();
+$("#iosOk").onclick = () => { $("#iosSheet").close(); store.set("installAsk", {n: INSTALL_ASKS, last: Date.now()}); };
 if(standalone()) try{ navigator.storage?.persist?.(); }catch{}
 // on narrow phones the header has no room for it: the same button lives in Settings
 new MutationObserver(() => { $("#setInstall").hidden = $("#installBtn").hidden; }).observe($("#installBtn"), {attributes: true, attributeFilter: ["hidden"]});
