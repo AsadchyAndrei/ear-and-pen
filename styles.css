@@ -613,3 +613,4 @@ body.kb .sessbar,body.kb .toast{visibility:hidden}
 .brand h1{white-space:nowrap}
 @media (max-width:420px){#installBtn{display:none!important}}
 @media (min-width:421px){#setInstall{display:none!important}}
+.banner.inapp{justify-content:space-between;align-items:flex-start;margin-bottom:10px} .banner.inapp .btn{flex:none;min-height:32px;width:32px;padding:0}

@@ -2110,7 +2110,11 @@ function remNote(msg, err){ $("#remNote").textContent = msg; $("#remNote").class
 async function turnRemindersOn(){
   const rm = remCfg();
   if(!user){ $("#remOn").checked = false; $("#todaySheet").close(); openAcct("Напоминания приходят после входа в аккаунт."); return; }
-  if(isIOS() && !standalone()){ $("#remOn").checked = false; remNote("На iPhone напоминания работают в установленном приложении: Safari → Поделиться → На экран «Домой», затем откройте Ear & Pen с иконки.", true); return; }
+  if(isIOS() && !standalone()){
+    $("#remOn").checked = false; remNote("На iPhone напоминания работают только в установленном приложении.", true);
+    $("#todaySheet").close(); openInstall("Напоминания на iPhone приходят только в установленное приложение — так устроен iOS. Поставьте Ear & Pen на экран «Домой», откройте с иконки и включите напоминания там.");
+    return;
+  }
   if(!pushOK()){ $("#remOn").checked = false; remNote("Этот браузер не умеет присылать напоминания. Попробуйте Chrome или установленное приложение.", true); return; }
   const perm = await Notification.requestPermission();
   if(perm !== "granted"){ $("#remOn").checked = false; remNote("Уведомления запрещены. Разрешите их для earandpen.net в настройках браузера или телефона.", true); return; }
@@ -2523,9 +2527,17 @@ addEventListener("appinstalled", () => { $("#installBtn").hidden = true; install
 $("#installBtn").hidden = standalone() || !isIOS();
 $("#installBtn").onclick = async () => {
   if(installEvt){ installEvt.prompt(); try{ await installEvt.userChoice; }catch{} installEvt = null; $("#installBtn").hidden = true; return; }
-  $("#iosWhy").hidden = true; $("#iosActs").hidden = true;
-  $("#iosSheet").showModal();
+  openInstall();
 };
+function openInstall(why){
+  $("#iosWhy").hidden = !why; if(why) $("#iosWhy").textContent = why;
+  $("#iosActs").hidden = true;
+  $("#iosSheet").showModal();
+}
+// Telegram, Instagram and other apps open links in their own browser: no install, and the microphone asks every time
+const inAppBrowser = () => { const ua = navigator.userAgent; return !standalone() && (/Telegram|Instagram|FBAN|FBAV|FB_IAB|Line\/|WhatsApp|Snapchat|musical_ly|TikTok|MicroMessenger/i.test(ua) || (isIOS() && !/Safari\//.test(ua))); };
+if(inAppBrowser() && Date.now() - store.get("inAppHidden", 0) > 7 * 864e5) $("#inApp").hidden = false;
+$("#inAppClose").onclick = () => { $("#inApp").hidden = true; store.set("inAppHidden", Date.now()); };
 $("#iosClose").onclick = () => $("#iosSheet").close();
 // ask to install at a good moment: right after a finished exercise, not on arrival; at most 3 times, 3+ days apart
 const INSTALL_ASKS = 3, INSTALL_GAP = 3 * 864e5;
@@ -2536,8 +2548,8 @@ function maybeAskInstall(){
   if(sess || document.querySelector("dialog[open]") || listening || soloRec) return;
   store.set("installAsk", {n: a.n + 1, last: Date.now()});
   if(installEvt){ showToast("Установите Ear & Pen — откроется в один тап и будет работать без интернета.", {label: "Установить", fn: () => $("#installBtn").click()}, 12000); return; }
-  $("#iosWhy").hidden = false; $("#iosActs").hidden = false;
-  $("#iosSheet").showModal();
+  openInstall("Отлично позанимались! Поставьте Ear & Pen на экран «Домой»: откроется в один тап, на весь экран, без адресной строки, будет работать без интернета и сможет напоминать о занятии.");
+  $("#iosActs").hidden = false;
 }
 $("#iosLater").onclick = () => $("#iosSheet").close();
 $("#iosOk").onclick = () => { $("#iosSheet").close(); store.set("installAsk", {n: INSTALL_ASKS, last: Date.now()}); };
