@@ -588,7 +588,7 @@ function checkDictation(force){
       <div><div class="big">${avg}%</div><div class="note">точность${skipped ? `<br>по ${results.length} из ${n} строк` : ""}</div></div>
       <div style="flex:1;min-width:200px"><p style="margin:0">${verdict}</p>
       <p class="note" style="margin-top:4px">${errCount ? `Ошибок и пропусков: ${errCount}. ` : "Ошибок нет. "}${skipped ? `Не заполнено строк: ${skipped}. ` : ""}${dRevealed ? "В статистику не записано — пропущенные строки были открыты. " : counts || dRecorded ? "" : `<button class="linkbtn" type="button" id="dShowSkipped">Показать пропущенные строки</button> (тогда этот диалог не попадёт в статистику). `}<ins class="w">жёлтым</ins> — правильное слово, <del class="w">красным</del> — что вы написали, <ins class="w miss">пунктиром</ins> — пропущено.</p></div>
-      ${errCount ? paidBtn("dExplainBtn", "Разобрать ошибки с Claude") : ""}
+      <div class="sumacts">${errCount ? paidBtn("dExplainBtn", "Разобрать ошибки с Claude") : ""}${nextBtn()}</div>
     </div>`;
   $("#dExplainBtn") && ($("#dExplainBtn").onclick = explainDictation);
   $("#dShowSkipped") && ($("#dShowSkipped").onclick = () => { dRecorded = true; dRevealed = true; document.querySelectorAll(".skipped.hid").forEach(x => x.classList.remove("hid")); $("#dShowSkipped").parentNode.removeChild($("#dShowSkipped").nextSibling); $("#dShowSkipped").remove(); });
@@ -601,6 +601,8 @@ function checkDictation(force){
   if(isPhone()) setTimeout(() => $("#dSummary").scrollIntoView({block: "start", behavior: "smooth"}), 100);
 }
 $("#dCheck").onclick = () => checkDictation();
+const nextBtn = () => !sess && dIdx < dialogs.length - 1 ? `<button class="btn" type="button" data-dnext>Следующий диалог →</button>` : "";
+document.addEventListener("click", e => { if(e.target.closest("[data-dnext]")){ dIdx++; renderDialog(); scrollTo({top: 0, behavior: "smooth"}); } });
 $("#dPartialYes").onclick = () => checkDictation(true);
 $("#dPartialNo").onclick = () => {
   $("#dPartial").hidden = true;
@@ -892,6 +894,15 @@ function readiness(t){
 }
 function paintGoal(){
   const t = target(), bar = $("#goalBar");
+  // a newcomer sees one thing to do: the first session, put together for them
+  const fresh = !t && !store.get("history", []).length;
+  bar.classList.toggle("hero", fresh);
+  setLabel($("#sessStart"), fresh ? "Начать первое занятие" : "Начать занятие", ["Начать занятие", "Начать первое занятие"]);
+  if(fresh){
+    $("#gbTitle").textContent = "Первое занятие — 10 минут";
+    $("#gbSub").textContent = "Послушаете короткий диалог и запишете его, повторите вслух и переведёте 3 фразы. Приложение ведёт по шагам.";
+    $("#gbPct").hidden = true; return;
+  }
   if(!t){
     $("#gbTitle").textContent = "Поставьте цель с датой";
     $("#gbSub").textContent = "Интервью, собеседование, работа — приложение составит план";
@@ -932,7 +943,8 @@ function openGoal(){
   goalDetail();
   $("#goalSheet").showModal();
 }
-$("#gbGoal").onclick = openGoal;
+$("#gbGoal").onclick = () => $("#goalBar").classList.contains("hero") ? startSession() : openGoal();
+$("#gbGoalLink").onclick = openGoal;
 $("#goalClose").onclick = () => $("#goalSheet").close();
 $("#goalKind").onchange = e => { const prev = Object.values(GOAL_NAMES); if(!$("#goalName").value || prev.includes($("#goalName").value)) $("#goalName").value = GOAL_NAMES[e.target.value] || ""; goalDetail(); };
 $("#goalDate").onchange = goalDetail;
@@ -981,7 +993,9 @@ function goStep(){
     const at = dialogs.findIndex(x => x.id === st.d);
     if(at >= 0 && at !== dIdx){ dIdx = at; }
     if(state.dmode !== (st.k === "speak" ? "speak" : "write")) setMode(st.k === "speak" ? "speak" : "write"); else renderDialog();
-    showView("dict"); scrollTo({top: 0, behavior: "smooth"});
+    showView("dict");
+    // the dialogue's title, the mode and the first line right under the sticky tabs
+    setTimeout(() => { const nav = $("nav.tabs").getBoundingClientRect().height, y = $("#view-dict .dtop").getBoundingClientRect().top + scrollY - nav - 16; scrollTo({top: Math.max(0, y), behavior: "smooth"}); }, 50);
   }
   if(st.k === "tr"){ sess.tr = 0; showView("tr"); }
   if(st.k === "civ"){ sess.civ = 0; openCiv("q"); }
@@ -1166,7 +1180,7 @@ $("#ownMake").onclick = () => {
   dialogs = [...BUILTIN, ...store.get("genDialogs", [])];
   dIdx = dialogs.findIndex(d => d.id === made[0].id);
   $("#ownSheet").close(); renderDialog();
-  showToast(made.length > 1 ? `Готово: ${made.length} ${plural(made.length, "часть", "части", "частей")}. Следующая — кнопкой →.` : "Готово — можно начинать.");
+  showToast(made.length > 1 ? `Готово: ${made.length} ${plural(made.length, "часть", "части", "частей")}. Следующая — в меню «⋯» → «Следующий →».` : "Готово — можно начинать.");
 };
 // delete your own text or a dialogue from Claude (on every device)
 $("#dDel").onclick = () => {
@@ -1472,6 +1486,7 @@ function finishSpeak(){
       <div><div class="big">${avg}%</div><div class="note">распознано${done.length < n ? `<br>по ${done.length} из ${n} строк` : ""}</div></div>
       <div style="flex:1;min-width:200px"><p style="margin:0">${verdict}</p>
       <p class="note" style="margin-top:4px">${misses.length ? `Не распознано слов: ${misses.length}. ` : ""}${counts && misses.length ? "Они вернутся в «Повтор». " : ""}Распознавание — не экзаменатор: имена и редкие слова оно может не узнать. Смотрите на слова, которые не получаются несколько раз.</p></div>
+      <div class="sumacts">${nextBtn()}</div>
     </div>`;
   if(d.vocab?.length){
     $("#dVocabWrap").hidden = false;
@@ -1486,7 +1501,16 @@ function paintWho(){
     : SR ? "Нажмите 🎤 и скажите фразу — слова, которые не распознались, подсветятся." + (access === "guest" ? ` <button class="linkbtn" type="button" data-acct>После входа</button> распознаёт сервер — точнее и с записью вашего голоса.` : "")
     : CAN_REC ? "Нажмите 🎤, скажите фразу и нажмите ещё раз, чтобы сравнить себя с диктором." : "";
 }
-$("#sOptsBtn").onclick = () => { const open = $("#sOpts").hidden; $("#sOpts").hidden = !open; $("#sOptsBtn").setAttribute("aria-expanded", String(open)); if(open) paintMics(); };
+// everything that is not "listen and write" lives in one menu: other dialogues, speed, own text, Claude, speaking options
+$("#dMenuBtn").onclick = () => {
+  const speak = state.dmode === "speak";
+  $("#sOpts").hidden = !speak; if(speak) paintMics();
+  $("#dMenu").showModal();
+};
+const closeMenu = () => { if($("#dMenu").open) $("#dMenu").close(); };
+$("#dMenuClose").onclick = closeMenu;
+$("#dAll").onclick = () => { closeMenu(); $("#dLevel").click(); };
+for(const id of ["#dPrev", "#dNext", "#dGen", "#ownBtn", "#dDel"]) $(id).addEventListener("click", closeMenu, true);
 function setMode(m){
   stopListening();
   state.dmode = m; store.set("dmode", m);

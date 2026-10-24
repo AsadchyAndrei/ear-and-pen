@@ -614,3 +614,31 @@ body.kb .sessbar,body.kb .toast{visibility:hidden}
 @media (max-width:420px){#installBtn{display:none!important}}
 @media (min-width:421px){#setInstall{display:none!important}}
 .banner.inapp{justify-content:space-between;align-items:flex-start;margin-bottom:10px} .banner.inapp .btn{flex:none;min-height:32px;width:32px;padding:0}
+
+/* dictation header: topic and the "⋯" menu; mode and "listen" in one row */
+.drow1{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.dmenubtn{width:38px;height:38px;min-height:38px;padding:0;flex:none;margin:-6px -6px -6px 0}
+.dmenubtn svg{width:20px;height:20px}
+.modes{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:0}
+#dMenu .sheet-in > .btn{align-self:stretch;justify-content:center}
+.dm-nav{display:flex;gap:8px} .dm-nav .btn{flex:1;justify-content:center}
+.dm-nav .btn:disabled{opacity:.45}
+#dMenu .field .seg{align-self:flex-start}
+#dMenu .field{display:flex;flex-direction:column;gap:6px}
+.dm-more{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:14px}
+.dm-more .gen{display:flex} .dm-more .gen > .btn{flex:1;justify-content:center}
+.dm-more > .btn{justify-content:center}
+.dm-more .delbtn{align-self:center;margin:0}
+#dMenu .sopts{margin:0}
+.sumacts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+@media (max-width:560px){ .modes{flex-wrap:nowrap;gap:8px} .modes #dPlayAll{flex:1;min-width:0;justify-content:center;white-space:nowrap} .seg.mode button{padding:8px 12px} }
+.gb-link{display:none}
+.goalbar.hero{flex-direction:column;align-items:stretch;gap:12px;padding:16px;background:var(--accent-soft);border-color:transparent}
+.goalbar.hero .gb-goal{align-items:flex-start}
+.goalbar.hero .gb-goal > svg{width:30px;height:30px;margin-top:2px}
+.goalbar.hero .gb-txt b{font-size:19px;white-space:normal}
+.goalbar.hero .gb-txt .note{font-size:15px;white-space:normal;color:var(--fg);opacity:.8;margin-top:2px}
+.goalbar.hero #sessStart{min-height:50px;font-size:17px;justify-content:center}
+.goalbar.hero .gb-link{display:block;align-self:center;font-size:14px;text-align:center}
+.dm-nav .btn{white-space:nowrap;padding-left:8px;padding-right:8px}
+@media (max-width:560px){ .modes .seg.mode button{padding:8px 10px;gap:6px} .modes #dPlayAll{padding-left:8px;padding-right:8px} }
