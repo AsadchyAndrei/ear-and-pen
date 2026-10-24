@@ -684,8 +684,38 @@ function micHelp(){
   const browser = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : "браузер";
   return `Микрофон присылает тишину — скорее всего, ${browser} слушает не тот микрофон или он выключен.${many} Проверьте значок микрофона в адресной строке${mac ? `, а в macOS — Системные настройки → Конфиденциальность и безопасность → Микрофон → ${browser} и уровень входа в Настройках звука` : win ? ", а в Windows — Параметры → Конфиденциальность → Микрофон и устройство ввода в Параметрах звука" : ""}.`;
 }
+// the microphone stays open for a short while between lines: opening it takes up to a second (longer on iPhone),
+// and the start of the phrase was lost or felt slow
+let warm = null, warmT = null;
+const WARM_MS = 45000;
+function dropWarm(){ clearTimeout(warmT); warmT = null; if(warm){ warm.getTracks().forEach(t => t.stop()); warm = null; } }
+document.addEventListener("visibilitychange", () => { if(document.hidden) dropWarm(); });
+$("#micSel")?.addEventListener("change", dropWarm);
+async function getMic(){
+  clearTimeout(warmT);
+  if(warm && warm.getAudioTracks().some(t => t.readyState === "live")) return warm;
+  dropWarm();
+  return (warm = await micStream());
+}
+// raw sound off the main thread where the browser can (AudioWorklet), so the page does not stutter while you speak
+const WORKLET = URL.createObjectURL(new Blob([`registerProcessor("tap", class extends AudioWorkletProcessor{ process(i){ const c = i[0] && i[0][0]; if(c) this.port.postMessage(c.slice(0)); return true; } });`], {type: "application/javascript"}));
+let workletReady = null;
+async function tapNode(ctx, onFrame){
+  if(ctx.audioWorklet && window.AudioWorkletNode){
+    try{
+      workletReady ||= ctx.audioWorklet.addModule(WORKLET);
+      await workletReady;
+      const n = new AudioWorkletNode(ctx, "tap", {numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1]});
+      n.port.onmessage = e => onFrame(e.data);
+      return n;
+    }catch{ workletReady = null; }
+  }
+  const p = ctx.createScriptProcessor(4096, 1, 1);
+  p.onaudioprocess = e => onFrame(new Float32Array(e.inputBuffer.getChannelData(0)));
+  return p;
+}
 async function startRec(){
-  const stream = await micStream();
+  const stream = await getMic();
   paintMics();
   const type = REC_TYPES.find(t => MediaRecorder.isTypeSupported?.(t)) || "";
   const mr = new MediaRecorder(stream, type ? {mimeType: type} : undefined), chunks = [];
@@ -695,15 +725,17 @@ async function startRec(){
   try{
     const ctx = actx || audioCtx();
     if(ctx){
-      src = ctx.createMediaStreamSource(stream); proc = ctx.createScriptProcessor(4096, 1, 1); live.rate = ctx.sampleRate;
-      proc.onaudioprocess = e => live.frames.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-      src.connect(proc); proc.connect(ctx.destination);
+      src = ctx.createMediaStreamSource(stream); live.rate = ctx.sampleRate;
+      proc = await tapNode(ctx, f => live.frames.push(f));
+      // a silent output keeps the node running without sending the microphone to the speakers
+      const mute = ctx.createGain(); mute.gain.value = 0;
+      src.connect(proc); proc.connect(mute); mute.connect(ctx.destination); live.mute = mute;
     }
   }catch{ src = proc = null; }
   mr.ondataavailable = e => { if(e.data?.size) chunks.push(e.data); };
   const done = new Promise(res => { mr.onstop = () => {
-    try{ src?.disconnect(); proc?.disconnect(); }catch{}
-    stream.getTracks().forEach(t => t.stop());
+    try{ src?.disconnect(); proc?.disconnect(); live.mute?.disconnect(); }catch{}
+    clearTimeout(warmT); warmT = setTimeout(dropWarm, WARM_MS);
     const blob = chunks.length ? new Blob(chunks, {type: mr.mimeType || type || "audio/mp4"}) : null;
     if(blob){ blob.live = livePCM(live); blob.peak = blob.live ? blob.live.peak : -1; }
     res(blob);
@@ -1294,12 +1326,19 @@ const STT_ERR = {sign_in_required: "Распознавание на сервер
 async function hearServer(expected, btn, out){
   audioCtx(); stopSpeech();
   let rec;
-  try{ rec = await startRec(); }catch(e){ out.classList.add("err"); out.textContent = e?.name === "NotAllowedError" ? SR_ERR["not-allowed"] : "Не получилось включить микрофон."; return null; }
+  // the button reacts at once, even while the microphone is still opening
   btn.classList.add("on"); btn.setAttribute("aria-pressed", "true");
-  out.classList.remove("err"); out.textContent = "Говорите… Когда закончите — нажмите на микрофон ещё раз.";
+  out.classList.remove("err"); out.textContent = "Включаю микрофон…";
+  // a second tap while it opens means "stop as soon as it is open"
+  let early = null; listening = { stop(){ early = "stop"; }, abort(){ early = "abort"; } };
+  try{ rec = await startRec(); }catch(e){ listening = null; btn.classList.remove("on"); btn.setAttribute("aria-pressed", "false"); out.classList.add("err"); out.textContent = e?.name === "NotAllowedError" ? SR_ERR["not-allowed"] : "Не получилось включить микрофон."; return null; }
+  out.textContent = "Говорите… Когда закончите — нажмите на микрофон ещё раз.";
   const row = btn.closest(".line"); row?.classList.add("listening");
   let aborted = false;
-  const blob = await new Promise(res => { listening = { stop(){ listening = null; rec.stop().then(res); }, abort(){ listening = null; aborted = true; rec.stop().then(res); } }; });
+  const blob = await new Promise(res => {
+    listening = { stop(){ listening = null; rec.stop().then(res); }, abort(){ listening = null; aborted = true; rec.stop().then(res); } };
+    if(early) listening[early]();
+  });
   btn.classList.remove("on"); btn.setAttribute("aria-pressed", "false"); row?.classList.remove("listening");
   if(aborted) { out.textContent = ""; return null; }
   if(silent(blob)){ out.classList.add("err"); await paintMics(); out.textContent = `Запись беззвучная (${recInfo(blob)}). ${micHelp()}`; return null; }

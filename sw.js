@@ -3,7 +3,7 @@
    the saved copy opens right away. Fonts and the Firebase library: saved and served from the cache, so the app
    looks the same offline. Claude and the voice server go straight to the network (voice audio is kept by the app itself).
    A new version waits until the person taps "Обновить" (the app sends "skip"); right after the app opens it applies itself. */
-const V = 'ep-v38', RT = 'ep-rt-v1';
+const V = 'ep-v39', RT = 'ep-rt-v1';
 const CORE = ['./', 'index.html', 'styles.css', 'js/app.js', 'js/merge.js', 'js/civmatch.js', 'js/cloud.js', 'prompts.js', 'content.js', 'civics.js', 'config.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon.svg', 'icons/badge-96.png', 'favicon.ico'];
 const FONT_CSS = 'https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Source+Sans+3:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap';
