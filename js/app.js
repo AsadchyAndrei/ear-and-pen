@@ -174,6 +174,7 @@ function showView(v){
   document.querySelectorAll("nav.tabs button").forEach(b => { const on = b.dataset.view === v; b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1; });
   TABS.forEach(x => $("#view-"+x).hidden = x !== v);
   if(v === "stats"){ renderStats(); renderVoice(); }
+  if(typeof tipTab === "function"){ hideTip(); tipTab(v); if(v === "dict") setTimeout(tipFirstLine, 300); }
   if(v === "rev"){ if(rpos >= rq.length) startRev(); else renderRev(); }
   if(v === "tr" && !isPhone()) setTimeout(() => $("#trIn").focus(), 0);
   stopSpeech();
@@ -394,7 +395,7 @@ function paintEyebrow(){
 }
 function renderDialog(){
   const d = dialogs[dIdx];
-  stopSpeech(); stopListening(); dChecked = false; dRecorded = false; dRevealed = false; sBest = []; sRecorded = false; mine = [];
+  stopSpeech(); stopListening(); hideTip(); dChecked = false; dRecorded = false; dRevealed = false; sBest = []; sRecorded = false; mine = [];
   $("#view-dict").classList.remove("checked");
   $("#dCheck").textContent = "Проверить";
   paintEyebrow();
@@ -599,6 +600,7 @@ function checkDictation(force){
   }
   announce(`Проверено. Точность ${avg} процентов${errCount ? `, ошибок и пропусков ${errCount}` : ", ошибок нет"}.`);
   if(isPhone()) setTimeout(() => $("#dSummary").scrollIntoView({block: "start", behavior: "smooth"}), 100);
+  tipAfterCheck();
 }
 $("#dCheck").onclick = () => checkDictation();
 const nextBtn = () => !sess && dIdx < dialogs.length - 1 ? `<button class="btn" type="button" data-dnext>Следующий диалог →</button>` : "";
@@ -681,7 +683,7 @@ navigator.mediaDevices?.addEventListener?.("devicechange", paintMics);
 // where to look when the microphone gives silence
 function micHelp(){
   const ua = navigator.userAgent, mac = /Macintosh/.test(ua) && !(navigator.maxTouchPoints > 1), win = /Windows/.test(ua);
-  const many = !$("#micWrap").hidden ? " Если микрофонов несколько — выберите другой: ⚙ рядом с «Говорить» → «микрофон»." : "";
+  const many = !$("#micWrap").hidden ? " Если микрофонов несколько — выберите другой: меню «⋯» над диалогом → «микрофон»." : "";
   if(isIOS()) return "Проверьте, что сайту разрешён микрофон: Настройки → Приложения → Safari → Микрофон." + many;
   const browser = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : "браузер";
   return `Микрофон присылает тишину — скорее всего, ${browser} слушает не тот микрофон или он выключен.${many} Проверьте значок микрофона в адресной строке${mac ? `, а в macOS — Системные настройки → Конфиденциальность и безопасность → Микрофон → ${browser} и уровень входа в Настройках звука` : win ? ", а в Windows — Параметры → Конфиденциальность → Микрофон и устройство ввода в Параметрах звука" : ""}.`;
@@ -846,12 +848,11 @@ new MutationObserver(syncLock).observe(document.body, {subtree: true, attributes
 /* ---------- a short tour on the first visit (and from Settings) ---------- */
 const TI = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 const TOUR = [
-  {ic: TI('<path d="M15 4l5 5L9 20H4v-5z"/>'), t: "Диктант", x: "Слушайте строку диалога и пишите, что услышали. «Проверить» подсветит ошибки, а после входа Claude объяснит, почему слово легко не расслышать. Скорость — 0.7×, 0.85× или 1×."},
-  {ic: TI('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>'), t: "Говорить", x: "Переключатель «Писать / Говорить»: повторяйте строку вслух, приложение покажет слова, которые не распознались, и даст сравнить вашу запись с диктором."},
-  {ic: TI('<path d="M4 6h9M8.5 4v2c0 4-2 7-5 8.5M6 10c1.5 2 3.5 3.5 6 4.5"/><path d="M13 20l4-9 4 9M14.5 17h5"/>'), t: "Перевод", x: "Русское предложение — ваш перевод на английский — разбор: оценка, исправленный и «носительский» вариант, правило для каждой ошибки."},
-  {ic: TI('<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4"/>'), t: "Повтор", x: "Ваши ошибки и полезные выражения из пройденных диалогов возвращаются через 1, 3, 7, 14, 30 и 60 дней — пока не запомнятся. Число на вкладке — сколько ждёт сегодня."},
-  {ic: TI('<circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/>'), t: "Сегодня", x: "Кольцо в шапке — цель на день и серия дней подряд. Там же цель настраивается и включаются ежедневные напоминания на телефон."},
-  {ic: TI('<path d="M12 5v14M5 12h14"/>'), t: "Свой текст и аккаунт", x: "Вставьте любой английский текст — получится диктант. Войдите в аккаунт: прогресс синхронизируется между устройствами, и включатся функции Claude. Настройки — ⚙ в шапке."},
+  {ic: TI('<path d="M15 4l5 5L9 20H4v-5z"/>'), t: "Диктант", x: "Нажмите ▶ у строки — диктор прочитает её. Напишите, что услышали, и нажмите «Проверить»: ошибки подсветятся. Медленнее — кнопка 🐢 у строки."},
+  {ic: TI('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>'), t: "Вслух", x: "Переключатель «Писать / Вслух»: повторяйте строку голосом — приложение покажет слова, которые не распознались, и даст сравнить вашу запись с диктором."},
+  {ic: TI('<path d="M4 6h9M8.5 4v2c0 4-2 7-5 8.5M6 10c1.5 2 3.5 3.5 6 4.5"/><path d="M13 20l4-9 4 9M14.5 17h5"/>'), t: "Перевод", x: "Переведите русское предложение на английский — получите оценку, исправленный вариант и объяснение каждой ошибки."},
+  {ic: TI('<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4"/>'), t: "Повторить", x: "Ваши ошибки и полезные выражения возвращаются через 1, 3, 7, 14, 30 и 60 дней — пока не запомнятся. Число на вкладке — сколько ждёт сегодня."},
+  {ic: TI('<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'), t: "Меню «⋯»", x: "Другой диалог, скорость диктора, свой текст и новые диалоги от Claude — в меню «⋯» над диалогом. Цель на день и напоминания — кольцо в шапке."},
 ];
 let tourI = 0;
 function paintTour(){
@@ -996,6 +997,7 @@ function goStep(){
     showView("dict");
     // the dialogue's title, the mode and the first line right under the sticky tabs
     setTimeout(() => { const nav = $("nav.tabs").getBoundingClientRect().height, y = $("#view-dict .dtop").getBoundingClientRect().top + scrollY - nav - 16; scrollTo({top: Math.max(0, y), behavior: "smooth"}); }, 50);
+    setTimeout(() => { if(st.k === "speak") tipSpeak(); else tipFirstLine(); }, 900);
   }
   if(st.k === "tr"){ sess.tr = 0; showView("tr"); }
   if(st.k === "civ"){ sess.civ = 0; openCiv("q"); }
@@ -1485,7 +1487,7 @@ function finishSpeak(){
   $("#dSummary").innerHTML = `<div class="summary">
       <div><div class="big">${avg}%</div><div class="note">распознано${done.length < n ? `<br>по ${done.length} из ${n} строк` : ""}</div></div>
       <div style="flex:1;min-width:200px"><p style="margin:0">${verdict}</p>
-      <p class="note" style="margin-top:4px">${misses.length ? `Не распознано слов: ${misses.length}. ` : ""}${counts && misses.length ? "Они вернутся в «Повтор». " : ""}Распознавание — не экзаменатор: имена и редкие слова оно может не узнать. Смотрите на слова, которые не получаются несколько раз.</p></div>
+      <p class="note" style="margin-top:4px">${misses.length ? `Не распознано слов: ${misses.length}. ` : ""}${counts && misses.length ? "Они вернутся во вкладке «Повторить». " : ""}Распознавание — не экзаменатор: имена и редкие слова оно может не узнать. Смотрите на слова, которые не получаются несколько раз.</p></div>
       <div class="sumacts">${nextBtn()}</div>
     </div>`;
   if(d.vocab?.length){
@@ -1521,6 +1523,7 @@ function setMode(m){
   if(m === "speak") paintMics();
   if(!SR && !CAN_REC) $("#sNo").textContent = "Этот браузер не умеет ни распознавать речь, ни записывать звук. Откройте сайт в Chrome, Edge или Safari.";
   renderDialog(); updateBar();
+  if(typeof hideTip === "function"){ hideTip(); if(m === "speak") tipSpeak(); else setTimeout(tipFirstLine, 300); }
 }
 $("#modeSeg").addEventListener("click", e => { const b = e.target.closest("[data-m]"); if(b && b.dataset.m !== state.dmode) setMode(b.dataset.m); });
 $("#sText").checked = store.get("sText", true);
@@ -1828,7 +1831,7 @@ function paintBadge(){
   const n = dueItems().length, b = $("#revBadge");
   b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n);
   try{ n ? navigator.setAppBadge?.(n) : navigator.clearAppBadge?.(); }catch{}
-  $("#tab-rev").setAttribute("aria-label", n ? `Повтор, ждут повторения: ${n}` : "Повтор");
+  $("#tab-rev").setAttribute("aria-label", n ? `Повторить, ждут: ${n}` : "Повторить");
 }
 // the sentence is spoken by the same voice as in its dialogue (that audio is usually saved already)
 function speakCtx(text, mul = 1){
@@ -2503,6 +2506,60 @@ $("#civClose").onclick = () => $("#civSheet").close();
 $("#civSheet").addEventListener("close", () => { stopSpeech(); stopListening(); civRefresh(); paintGoal(); });
 civInit = true; civRefresh();
 
+/* ---------- tips: one short hint next to the thing it is about, once ---------- */
+var tipEl = null, tipFor = null;
+const tipsSeen = () => store.get("tipsSeen", {});
+function hideTip(done){
+  if(!tipEl || tipEl.hidden) return;
+  tipEl.hidden = true;
+  if(done && tipFor){ const t = tipsSeen(); t[tipFor] = 1; store.set("tipsSeen", t); }
+  tipFor = null;
+}
+function placeTip(){
+  if(!tipEl || tipEl.hidden || !tipEl._at?.isConnected || !tipEl._at.offsetParent) return hideTip();
+  const r = tipEl._at.getBoundingClientRect(), w = Math.min(320, innerWidth - 24), pr = (tipEl._pt?.isConnected ? tipEl._pt : tipEl._at).getBoundingClientRect();
+  tipEl.style.width = w + "px";
+  const left = Math.max(12, Math.min(innerWidth - w - 12, pr.left + pr.width / 2 - w / 2));
+  tipEl.style.left = left + scrollX + "px";
+  tipEl.style.top = r.bottom + scrollY + 10 + "px";
+  tipEl.style.setProperty("--ax", Math.max(16, Math.min(w - 16, pr.left + pr.width / 2 - left)) + "px");
+}
+function tip(id, at, html, point){
+  if(!at || tipsSeen()[id] || document.querySelector("dialog[open]")) return false;
+  if(tipEl && !tipEl.hidden && tipFor !== id) return false;
+  if(!tipEl){
+    tipEl = document.createElement("div"); tipEl.className = "tip"; tipEl.setAttribute("role", "note");
+    document.body.append(tipEl);
+    tipEl.addEventListener("click", e => { if(e.target.closest(".tipok")) hideTip(true); });
+    addEventListener("resize", placeTip);
+  }
+  tipFor = id; tipEl._at = at; tipEl._pt = point || null;
+  tipEl.innerHTML = `<span>${html}</span><button class="tipok" type="button">Понятно</button>`;
+  tipEl.hidden = false; placeTip();
+  return true;
+}
+const phoneKeys = () => isPhone() ? "«Далее» на клавиатуре" : "Enter";
+function tipFirstLine(){
+  if(state.view !== "dict" || state.dmode === "speak" || dChecked) return;
+  tip("line", $('.line[data-i="0"]'), `Нажмите <b>▶</b> — диктор прочитает строку. Напишите, что услышали, и нажмите ${phoneKeys()} — зазвучит следующая. <b>🐢</b> — медленнее.`, $('.line[data-i="0"] .play'));
+}
+function tipAfterCheck(){
+  setTimeout(() => tip("check", $("#dSummary .summary"), `Жёлтым — правильное слово, красным — что вы написали. Ошибки сами вернутся во вкладке <b>«Повторить»</b>. Другой диалог и скорость — в меню <b>⋯</b> над диалогом.`), 700);
+}
+function tipSpeak(){
+  setTimeout(() => tip("speak", $('.line[data-i="0"]'), `Нажмите <b>🎤</b>, скажите строку и нажмите ещё раз. Слова, которые не распознались, подсветятся. Послушать себя — кнопка «Я» под строкой.`, $('.line[data-i="0"] .mic')), 300);
+}
+function tipTab(v){
+  if(v === "tr") setTimeout(() => tip("tr", $("#trIn"), `Переведите предложение на английский и нажмите <b>«Проверить»</b>. Не знаете слово — «Подсказка».`), 300);
+  if(v === "rev") setTimeout(() => tip("rev", $("#view-rev .rcard, #view-rev .mcard, #view-rev h2"), `Здесь возвращаются ваши ошибки и выражения из диалогов — через 1, 3, 7… дней. Ответили верно — следующий раз будет позже.`), 400);
+}
+// any tap elsewhere means "got it" (the tip lets taps through to what is under it)
+// a tap on the thing it explains means "got it" for good; a tap elsewhere only hides it for now
+document.addEventListener("pointerdown", e => { if(tipEl && !tipEl.hidden && !e.target.closest(".tip")) hideTip(!!tipEl._at?.contains(e.target)); }, true);
+// the first-line tip goes away once you start
+document.addEventListener("input", e => { if(tipFor === "line" && e.target.closest?.("#lines")) hideTip(true); });
+document.addEventListener("click", e => { if(tipFor === "line" && e.target.closest?.('.line[data-i="0"] .play')) setTimeout(() => hideTip(true), 1500); });
+
 /* ---------- toast ---------- */
 let toastEl;
 const hideToast = () => { if(toastEl){ clearTimeout(toastEl._t); toastEl.hidden = true; } };
@@ -2807,7 +2864,8 @@ paintGoal();
 paintToday();
 const openFromHash = () => { const h = location.hash.slice(1); if(TABS.includes(h) && h !== state.view) showView(h); };
 openFromHash(); addEventListener("hashchange", openFromHash);
-if(!store.get("introSeen", false)) setTimeout(() => { if(![...document.querySelectorAll("dialog")].some(d => d.open)) openTour(); }, 400);
+// no tour on arrival: short tips appear where and when they are needed
+setTimeout(() => tipFirstLine(), 600);
 $("#introClose").onclick = () => { $("#intro").hidden = true; store.set("introSeen", true); };
 netState();
 bootCloud();

@@ -642,3 +642,11 @@ body.kb .sessbar,body.kb .toast{visibility:hidden}
 .goalbar.hero .gb-link{display:block;align-self:center;font-size:14px;text-align:center}
 .dm-nav .btn{white-space:nowrap;padding-left:8px;padding-right:8px}
 @media (max-width:560px){ .modes .seg.mode button{padding:8px 10px;gap:6px} .modes #dPlayAll{padding-left:8px;padding-right:8px} }
+
+/* tips: one short hint under the thing it is about */
+.tip{position:absolute;z-index:40;background:var(--fg);color:var(--bg);border-radius:12px;padding:12px 14px;font-size:15px;line-height:1.4;box-shadow:0 10px 30px rgba(0,0,0,.25);display:flex;flex-direction:column;gap:8px}
+.tip[hidden]{display:none}
+.tip::before{content:"";position:absolute;top:-7px;left:calc(var(--ax, 50%) - 7px);border:7px solid transparent;border-top:0;border-bottom-color:var(--fg)}
+.tip b{color:inherit}
+.tip .tipok{align-self:flex-end;background:none;border:0;color:var(--bg);font:inherit;font-weight:700;padding:2px 0;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.tip{pointer-events:none} .tip .tipok{pointer-events:auto}
