@@ -812,7 +812,7 @@ new MutationObserver(syncLock).observe(document.body, {subtree: true, attributes
 /* ---------- a short tour on the first visit (and from Settings) ---------- */
 const TI = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 const TOUR = [
-  {ic: TI('<path d="M15 4l5 5L9 20H4v-5z"/>'), t: "Диктант", x: "Слушайте строку диалога и пишите, что услышали. «Проверить» подсветит ошибки, а Claude объяснит, почему слово легко ослышать. Скорость — 0.7×, 0.85× или 1×."},
+  {ic: TI('<path d="M15 4l5 5L9 20H4v-5z"/>'), t: "Диктант", x: "Слушайте строку диалога и пишите, что услышали. «Проверить» подсветит ошибки, а после входа Claude объяснит, почему слово легко не расслышать. Скорость — 0.7×, 0.85× или 1×."},
   {ic: TI('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>'), t: "Говорить", x: "Переключатель «Писать / Говорить»: повторяйте строку вслух, приложение покажет слова, которые не распознались, и даст сравнить вашу запись с диктором."},
   {ic: TI('<path d="M4 6h9M8.5 4v2c0 4-2 7-5 8.5M6 10c1.5 2 3.5 3.5 6 4.5"/><path d="M13 20l4-9 4 9M14.5 17h5"/>'), t: "Перевод", x: "Русское предложение — ваш перевод на английский — разбор: оценка, исправленный и «носительский» вариант, правило для каждой ошибки."},
   {ic: TI('<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4"/>'), t: "Повтор", x: "Ваши ошибки и полезные выражения из пройденных диалогов возвращаются через 1, 3, 7, 14, 30 и 60 дней — пока не запомнятся. Число на вкладке — сколько ждёт сегодня."},
@@ -2525,6 +2525,10 @@ $("#installBtn").onclick = async () => {
 };
 $("#iosClose").onclick = () => $("#iosSheet").close();
 if(standalone()) try{ navigator.storage?.persist?.(); }catch{}
+// on narrow phones the header has no room for it: the same button lives in Settings
+new MutationObserver(() => { $("#setInstall").hidden = $("#installBtn").hidden; }).observe($("#installBtn"), {attributes: true, attributeFilter: ["hidden"]});
+$("#setInstall").hidden = $("#installBtn").hidden;
+$("#setInstall").onclick = () => { $("#setSheet").close(); $("#installBtn").click(); };
 
 /* ---------- updates ---------- */
 const bootAt = Date.now();

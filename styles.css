@@ -610,3 +610,6 @@ body.has-sess{padding-bottom:110px}
 @media (prefers-reduced-motion: reduce){#civMic.on,#rdMic.on{animation:none}}
 body.kb .sessbar,body.kb .toast{visibility:hidden}
 .skipped.hid{display:none}
+.brand h1{white-space:nowrap}
+@media (max-width:420px){#installBtn{display:none!important}}
+@media (min-width:421px){#setInstall{display:none!important}}
